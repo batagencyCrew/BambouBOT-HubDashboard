@@ -1,0 +1,19 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$HUB_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 1MB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        X-Frame-Options "DENY"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        -Server
+    }
+    reverse_proxy hub:8000
+}

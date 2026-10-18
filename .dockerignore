@@ -1,0 +1,11 @@
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+.venv
+**/.venv
+.env
+data
+agent-state
+.git
+.qa

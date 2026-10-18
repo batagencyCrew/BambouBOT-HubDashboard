@@ -1,0 +1,26 @@
+[Unit]
+Description=Bambou Hub site automation agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=automation
+Group=automation
+WorkingDirectory=/opt/HubDashboard
+EnvironmentFile=/etc/hub-agent.env
+# Replace the command with your own script and absolute Python path.
+ExecStart=/opt/HubDashboard/.venv/bin/python agent/agent.py --state-dir /var/lib/hub-agent --command "/opt/HubDashboard/.venv/bin/python /opt/HubDashboard/agent/demo_worker.py"
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+StateDirectory=hub-agent
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
