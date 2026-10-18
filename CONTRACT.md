@@ -18,6 +18,7 @@ All endpoints under `/api`. Bearer access token required except POST `/auth/logi
 - POST `/sites/{id}/presets` `{ai_api_key?: string}` => `{presets:[{id:string,name:string,archived:boolean}]}`. Admin only. Uses the site's encrypted AI key when omitted, or a transient entered key without saving it. Calls the fixed HTTPS BambouBotAI presets API server-side using bearer authentication. Provider errors are sanitized; no stored key is exposed to the browser.
 - GET `/sites/{id}/proxies` => Proxy[] (password omitted; has_password boolean)
 - POST `/sites/{id}/proxies` `{url: string, username?: string, password?: string}` => Proxy (http/https/socks5 URLs without credentials only)
+- POST `/sites/{id}/proxies/import` `{content:string,proxy_type?:'http'|'https'|'socks5',dry_run?:boolean}` => atomic import/preview report. Defaults HTTP and preview-only. See [proxy import format and response](docs/PROXY_IMPORT.md).
 - DELETE `/sites/{id}/proxies/{proxy_id}` => 204
 - POST `/sites/{id}/commands` `{action: 'start'|'stop'|'restart'}` => Command
 - GET `/sites/{id}/commands` => Command[] (latest 20)

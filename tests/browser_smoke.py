@@ -147,12 +147,65 @@ def main():
                     page.get_by_role("tab", name="Proxies").click()
                     page.get_by_role("button", name="Add proxy", exact=True).click()
                     dialog = page.get_by_role("dialog")
-                    dialog.get_by_label("Proxy URL").fill("socks5://proxy.example.com:1080")
+                    dialog.get_by_label("Proxy type", exact=True).select_option("socks5")
+                    dialog.get_by_label("Host:port", exact=True).fill("socks5://proxy.example.com:1080")
+                    dialog.get_by_role("button", name="Add proxy", exact=True).click()
+                    expect(dialog.get_by_role("alert")).to_be_visible()
+                    assert api("GET", base + "/proxies") == []
+                    dialog.get_by_label("Host:port", exact=True).fill("proxy.example.com:1080")
                     dialog.get_by_label("Username").fill("proxy-user")
                     dialog.get_by_label("Password").fill("browser-test-proxy-secret")
                     dialog.get_by_role("button", name="Add proxy", exact=True).click()
                     expect(page.get_by_text("socks5://proxy.example.com:1080", exact=True)).to_be_visible()
                     assert "browser-test-proxy-secret" not in page.locator("body").inner_text()
+
+                    page.get_by_role("button", name="Import proxies", exact=True).click()
+                    dialog = page.get_by_role("dialog")
+                    dialog.get_by_label("Default proxy type", exact=True).select_option("https")
+                    dialog.get_by_label("Proxy file", exact=True).set_input_files({
+                        "name": "invalid-proxies.txt", "mimeType": "text/plain",
+                        "buffer": b"new-proxy.example.com:8080:import-user:import-password\ninvalid-line\n",
+                    })
+                    dialog.get_by_role("button", name="Preview import", exact=True).click()
+                    expect(dialog.get_by_role("alert")).to_contain_text("Line 2")
+                    expect(dialog.get_by_role("button", name="Import proxies", exact=True)).to_be_disabled()
+                    assert len(api("GET", base + "/proxies")) == 1
+                    dialog.get_by_label("Proxy file", exact=True).set_input_files({
+                        "name": "proxies.txt", "mimeType": "text/plain",
+                        "buffer": (
+                            "# Mixed protocols and duplicate entries\n"
+                            "new-proxy.example.com:8080:import-user:import-password\n"
+                            "new-proxy.example.com:8080:import-user:import-password\n"
+                            "socks5://proxy-user:browser-test-proxy-secret@proxy.example.com:1080\n"
+                            "http://other-proxy.example.com:80\n"
+                        ).encode(),
+                    })
+                    expect(dialog.get_by_role("button", name="Import proxies", exact=True)).to_be_disabled()
+                    dialog.get_by_role("button", name="Preview import", exact=True).click()
+                    expect(dialog.get_by_text("https://new-proxy.example.com:8080", exact=True).first).to_be_visible()
+                    expect(dialog.get_by_text("http://other-proxy.example.com:80", exact=True)).to_be_visible()
+                    expect(dialog.get_by_text("Total: 4 · New valid: 2 · Duplicates: 2 · Errors: 0", exact=True)).to_be_visible()
+                    assert "import-password" not in dialog.inner_text()
+                    assert "browser-test-proxy-secret" not in dialog.inner_text()
+                    assert len(api("GET", base + "/proxies")) == 1
+                    # Changing the default type invalidates a successful preview.
+                    dialog.get_by_label("Default proxy type", exact=True).select_option("http")
+                    expect(dialog.get_by_role("button", name="Import proxies", exact=True)).to_be_disabled()
+                    dialog.get_by_label("Default proxy type", exact=True).select_option("https")
+                    dialog.get_by_role("button", name="Preview import", exact=True).click()
+                    expect(dialog.get_by_role("button", name="Import proxies", exact=True)).to_be_enabled()
+                    page.screenshot(path=str(screenshots / "proxy-import.png"), full_page=True)
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    page.screenshot(path=str(screenshots / "proxy-import-mobile.png"), full_page=True)
+                    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile import overflow"
+                    page.set_viewport_size({"width": 1440, "height": 1000})
+                    with page.expect_response(lambda response: response.url.endswith("/proxies/import")
+                                              and response.request.post_data_json.get("dry_run") is False) as imported:
+                        dialog.get_by_role("button", name="Import proxies", exact=True).click()
+                    assert imported.value.json()["imported"] == 2
+                    expect(page.get_by_role("dialog")).not_to_be_visible()
+                    expect(page.locator(".proxy-url")).to_have_count(3)
+                    assert len(api("GET", base + "/proxies")) == 3
 
                     worker_id = str(uuid4())
                     agent_api("POST", "/heartbeat", json={"status": "healthy", "workers": [{
@@ -223,7 +276,7 @@ def main():
                     assert errors == [], errors
                     browser.close()
                     session.close()
-                    print("Browser smoke passed: auth, sites, secrets, proxies, telemetry, commands, logs, mobile, rotation, deletion")
+                    print("Browser smoke passed: auth, sites, secrets, proxy types and file imports, telemetry, commands, logs, mobile, rotation, deletion")
                     print("Screenshots: .qa/screenshots/")
             finally:
                 server.terminate()

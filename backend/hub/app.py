@@ -28,6 +28,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from .proxy_import import parse_file, parse_proxy
+
 
 TOKEN_TTL = 8 * 60 * 60
 MAX_BODY = 1024 * 1024
@@ -194,6 +196,12 @@ class ProxyCreate(Model):
     @classmethod
     def proxy_url(cls, value: str) -> str:
         return validate_url(value, {"http", "https", "socks5"})
+
+
+class ProxyImport(Model):
+    content: str = Field(repr=False)
+    proxy_type: Literal["http", "https", "socks5"] = "http"
+    dry_run: bool = Field(default=True, strict=True)
 
 
 class CommandCreate(Model):
@@ -432,6 +440,8 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def invalid_input(request, exc):
         # Pydantic's default errors include input values (including passwords).
+        if request.url.path.endswith("/proxies/import"):
+            return JSONResponse(status_code=422, content={"detail": "Invalid proxy import request"})
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": list(e["loc"]), "type": e["type"], "msg": "Invalid input"}
             for e in exc.errors()
@@ -627,6 +637,39 @@ def create_app(
                 raise HTTPException(409, "Proxy limit reached")
             db.execute("INSERT INTO proxies(id,site_id,url,username,password,created_at) VALUES(?,?,?,?,?,?)", (proxy_id, str(site_id), body.url, body.username, encrypt(body.password.get_secret_value()), now()))
             return proxy_output(db.execute("SELECT * FROM proxies WHERE id=?", (proxy_id,)).fetchone())
+
+    @app.post("/api/sites/{site_id}/proxies/import", dependencies=admin_dependencies)
+    def import_proxies(site_id: UUID, body: ProxyImport):
+        total, entries, errors = parse_file(body.content, body.proxy_type)
+        with store.transaction() as db:
+            site_row(db, str(site_id))
+            stored = db.execute("SELECT url,username,password FROM proxies WHERE site_id=?", (str(site_id),)).fetchall()
+            identities = set()
+            for row in stored:
+                try:
+                    url = parse_proxy(row["url"]).url
+                except ValueError:
+                    # Legacy manual entries can lack explicit ports or include paths.
+                    continue
+                identities.add((url, row["username"], decrypt(row["password"])))
+            previews, new = [], []
+            for entry in entries:
+                duplicate = entry.identity in identities
+                previews.append(entry.preview(duplicate))
+                if not duplicate:
+                    identities.add(entry.identity)
+                    new.append(entry)
+            if len(stored) + len(new) > MAX_PROXIES:
+                errors.append({"line": 0, "message": "Site proxy limit of 1000 would be exceeded"})
+            imported = 0
+            if not body.dry_run and not errors:
+                for entry in new:
+                    db.execute("INSERT INTO proxies(id,site_id,url,username,password,created_at) VALUES(?,?,?,?,?,?)",
+                               (uid(), str(site_id), entry.url, entry.username, encrypt(entry.password), now()))
+                imported = len(new)
+            return {"total": total, "valid": len(new), "duplicates": len(entries) - len(new),
+                    "imported": imported, "can_import": not errors and bool(new) and body.dry_run,
+                    "errors": errors, "entries": previews}
 
     @app.delete("/api/sites/{site_id}/proxies/{proxy_id}", dependencies=admin_dependencies, status_code=204)
     def delete_proxy(site_id: UUID, proxy_id: UUID):

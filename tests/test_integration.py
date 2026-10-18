@@ -57,6 +57,24 @@ def test_real_hub_agent_lifecycle(tmp_path):
             site_id = created["site"]["id"]
             base = f"/sites/{site_id}"
             api("PUT", base + "/config", json={"number_of_workers": 1, "ai_preset_id": "test", "ai_api_key": "test-secret"})
+            import_payload = {"content": "proxy.example.com:1080:integration-user:integration-password\n",
+                              "proxy_type": "socks5", "dry_run": True}
+            preview = api("POST", base + "/proxies/import", json=import_payload)
+            assert preview["can_import"] and preview["valid"] == 1 and preview["imported"] == 0
+            assert api("GET", base + "/proxies") == []
+            imported = api("POST", base + "/proxies/import", json={**import_payload, "dry_run": False})
+            assert imported["imported"] == 1
+            repeated = api("POST", base + "/proxies/import", json={**import_payload, "dry_run": False})
+            assert repeated["imported"] == 0 and repeated["duplicates"] == 1
+            invalid = api("POST", base + "/proxies/import", json={
+                "content": "new-proxy.example.com:8080\ninvalid-line\n", "proxy_type": "http", "dry_run": False,
+            })
+            assert invalid["errors"] and invalid["imported"] == 0
+            assert len(api("GET", base + "/proxies")) == 1
+            runtime_config = requests.get(origin + "/api/agent/config",
+                                          headers={"Authorization": "Bearer " + created["agent_token"]}, timeout=5)
+            runtime_config.raise_for_status()
+            assert runtime_config.json()["proxies"][0]["password"] == "integration-password"
             agent_env = dict(env, HUB_URL=origin, HUB_AGENT_TOKEN=created["agent_token"])
             agent = subprocess.Popen([sys.executable, "agent/agent.py", "--state-dir", str(tmp_path / "agent"),
                                       "--command", f"{sys.executable} {ROOT / 'agent/demo_worker.py'}"],

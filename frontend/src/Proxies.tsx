@@ -10,6 +10,24 @@ import {
 import { api, errorMessage, json } from "./api";
 import type { Proxy } from "./types";
 import { Confirm, dateTime, Empty, ErrorBanner, Modal } from "./ui";
+import ProxyImport, { type ProxyType } from "./ProxyImport";
+
+function proxyAddress(type: ProxyType, value: string) {
+  const hostPort = value.trim();
+  const match = /^(\[[0-9a-fA-F:.]+\]|[a-zA-Z0-9.-]+):(\d+)$/.exec(hostPort);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535)
+    throw new Error("Enter only a hostname/IP and port (1–65535). Bracket IPv6 addresses, e.g. [2001:db8::1]:1080. Do not include a protocol, path, or credentials.");
+  const host = match[1];
+  if (!host.startsWith("[") && !host.replace(/\.$/, "").split(".").every((label) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)))
+    throw new Error("Enter a valid hostname or IP address.");
+  try {
+    // HTTP's URL parser validates bracketed IPv6 and numeric IPv4 as well.
+    const parsed = new URL(`http://${host}:${Number(match[2])}`);
+    return `${type}://${parsed.hostname}:${Number(match[2])}`;
+  } catch {
+    throw new Error("Enter a valid hostname or IP address. IPv6 must be bracketed.");
+  }
+}
 
 export default function Proxies({
   siteId,
@@ -22,7 +40,10 @@ export default function Proxies({
 }) {
   const [adding, setAdding] = useState(false);
   const [remove, setRemove] = useState<Proxy | null>(null);
-  const [url, setUrl] = useState("");
+  const [hostPort, setHostPort] = useState("");
+  const [proxyType, setProxyType] = useState<ProxyType>("http");
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,7 +51,8 @@ export default function Proxies({
   function closeAdd() {
     if (!busy) {
       setAdding(false);
-      setUrl("");
+      setHostPort("");
+      setProxyType("http");
       setUsername("");
       setPassword("");
       setError("");
@@ -40,27 +62,19 @@ export default function Proxies({
     event.preventDefault();
     setError("");
     try {
-      const parsed = new URL(url);
-      if (
-        !["http:", "https:", "socks5:"].includes(parsed.protocol) ||
-        !parsed.hostname ||
-        parsed.username ||
-        parsed.password
-      )
-        throw new Error(
-          "Use an HTTP, HTTPS, or SOCKS5 URL without embedded credentials. Enter credentials in the separate fields.",
-        );
+      const url = proxyAddress(proxyType, hostPort);
       setBusy(true);
       await api<Proxy>(
         `/sites/${siteId}/proxies`,
         json("POST", {
-          url: url.trim(),
+          url,
           ...(username ? { username } : {}),
           ...(password ? { password } : {}),
         }),
       );
       setAdding(false);
-      setUrl("");
+      setHostPort("");
+      setProxyType("http");
       setUsername("");
       setPassword("");
       onChange();
@@ -93,6 +107,10 @@ export default function Proxies({
           </h2>
           <p>Connection routes available to this site’s agent.</p>
         </div>
+        <div className="proxy-actions">
+        <button className="button" onClick={() => setImporting(true)}>
+          Import proxies
+        </button>
         <button
           className="button primary"
           onClick={() => {
@@ -103,7 +121,9 @@ export default function Proxies({
           <Plus size={16} />
           Add proxy
         </button>
+        </div>
       </div>
+      {notice && <div className="notice" role="status">{notice}</div>}
       <div className="panel">
         {proxies.length ? (
           <div className="table-scroll">
@@ -180,18 +200,29 @@ export default function Proxies({
             <div className="modal-body">
               {error && <ErrorBanner message={error} />}
               <label className="field">
-                Proxy URL
+                Proxy type
+                <select aria-label="Proxy type" value={proxyType} disabled={busy}
+                  onChange={(event) => { setProxyType(event.target.value as ProxyType); setError(""); }}>
+                  <option value="http">HTTP</option>
+                  <option value="https">HTTPS</option>
+                  <option value="socks5">SOCKS5</option>
+                </select>
+              </label>
+              <label className="field">
+                Host:port
                 <input
                   autoFocus
-                  type="url"
+                  aria-label="Host:port"
+                  type="text"
                   required
-                  value={url}
+                  value={hostPort}
+                  disabled={busy}
                   maxLength={2048}
-                  onChange={(event) => setUrl(event.target.value)}
-                  placeholder="socks5://proxy.example.com:1080"
+                  onChange={(event) => { setHostPort(event.target.value); setError(""); }}
+                  placeholder="proxy.example.com:1080"
                 />
                 <span className="field-hint">
-                  HTTP, HTTPS, or SOCKS5. No credentials in the URL.
+                  Hostname/IP and explicit port only. Bracket IPv6: [2001:db8::1]:1080.
                 </span>
               </label>
               <label className="field">
@@ -235,6 +266,12 @@ export default function Proxies({
           </form>
         </Modal>
       )}
+      {importing && <ProxyImport siteId={siteId} onClose={() => setImporting(false)}
+        onImported={(result) => {
+          setNotice(`Imported ${result.imported} proxies; ${result.duplicates} duplicates skipped. Restart workers to use the updated pool.`);
+          setImporting(false);
+          onChange();
+        }} />}
       {remove && (
         <Confirm
           title="Remove proxy?"

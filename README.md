@@ -7,6 +7,7 @@ A self-hosted dashboard, central API, and VPS agent for managing site automation
 - Site inventory with heartbeat-based health (offline after 60 seconds).
 - Worker status, CPU, memory, and completed-task telemetry.
 - Site-specific event/error logs, configuration, and proxy pools.
+- Proxy type selection for manual entry and validated text-file import with duplicate detection.
 - Encrypted AI/captcha API keys and proxy passwords; write-only dashboard fields.
 - BambouBotAI preset dropdown populated from its API using the site's saved or newly entered AI key.
 - Durable start/stop/restart requests with delivery and acknowledgement states.
@@ -54,6 +55,10 @@ uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000`. Restart the backend after the first frontend build if it was started without a built UI.
+
+## Managing proxies
+
+For manual entry, choose **Proxy type** (HTTP, HTTPS, or SOCKS5), then enter only `host:port` in **Host:port**. Supply credentials in the separate fields. Use **Import proxies** to upload a UTF-8 `.txt` or `.list` file, preview validation and duplicates, and confirm the import. See [supported file formats](docs/PROXY_IMPORT.md). Restart workers after changing their proxy pool.
 
 ## Connect an automation VPS
 

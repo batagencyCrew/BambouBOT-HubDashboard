@@ -1047,6 +1047,7 @@ select {
   padding-bottom: 7px;
 }
 .table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 table {
@@ -2715,4 +2716,27 @@ dd {
   .site-card:hover {
     transform: none;
   }
+}
+.proxy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.proxy-import-preview {
+  max-height: 340px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.proxy-import-preview table {
+  font-size: 12px;
+  min-width: 640px;
+}
+.modal:has(.proxy-import-footer) {
+  width: 760px;
+}
+.proxy-import-preview td:nth-child(n + 4) {
+  white-space: nowrap;
+}
+.proxy-import-footer {
+  flex-wrap: wrap;
 }
