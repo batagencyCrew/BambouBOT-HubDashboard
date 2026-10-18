@@ -4,6 +4,8 @@ Use the included supervisor for process-level start/stop/restart, or integrate d
 
 Agents always initiate HTTPS connections to the central hub. The hub persists commands until polled; no inbound HTTP listener, SSH connection, or port forwarding is needed on the automation VPS.
 
+For complete working examples rather than individual requests, use the [Python, Node.js, and Go starters](../templates/README.md). They also implement revision-safe local `config.json`/`proxies.txt` enrollment and dashboard-to-file mirroring. Custom integrations should follow the [local-sync contract](VPS_TEMPLATE_CONTRACT.md) if they need the same enrollment/deletion guarantees.
+
 ## Minimal authenticated client
 
 Install `requests` and set `HUB_URL=https://hub.example.com` and `HUB_AGENT_TOKEN` from the site's enrollment dialog. Use a verified HTTPS origin, not an endpoint path.

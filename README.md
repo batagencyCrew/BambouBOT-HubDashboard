@@ -6,11 +6,13 @@ A self-hosted dashboard, central API, and VPS agent for managing site automation
 
 - Site inventory with heartbeat-based health (offline after 60 seconds).
 - Worker status, CPU, memory, and completed-task telemetry.
+- Per-site statistics for successful links and average messages per chat, supplied by the automation.
 - Site-specific event/error logs, configuration, and proxy pools.
 - Proxy type selection for manual entry and validated text-file import with duplicate detection.
 - Encrypted AI/captcha API keys and proxy passwords; write-only dashboard fields.
 - BambouBotAI preset dropdown populated from its API using the site's saved or newly entered AI key.
 - Durable start/stop/restart requests with delivery and acknowledgement states.
+- Script → hub → cloud backups with any-file uploads, scheduled/on-demand packaging, and rclone destinations (Google Drive, S3, OneDrive, etc.).
 - Separate administrator and site-scoped agent credentials.
 - SQLite persistence, a Python process supervisor, and Docker + automatic HTTPS deployment.
 
@@ -60,7 +62,17 @@ Open `http://127.0.0.1:8000`. Restart the backend after the first frontend build
 
 For manual entry, choose **Proxy type** (HTTP, HTTPS, or SOCKS5), then enter only `host:port` in **Host:port**. Supply credentials in the separate fields. Use **Import proxies** to upload a UTF-8 `.txt` or `.list` file, preview validation and duplicates, and confirm the import. See [supported file formats](docs/PROXY_IMPORT.md). Restart workers after changing their proxy pool.
 
+## Backups
+
+The **Backups** site tab configures schedules and cloud destinations and queues on-demand requests. Scripts upload arbitrary files to the hub; the hub stages and hashes them, then routes them to configured rclone remotes. Archives are never extracted or executed. To use automatic codebase packaging, configure the source on the VPS with `--backup-dir /path/to/script`; cloud credentials belong only in the hub's private rclone configuration. **Cloud setup is required before backups can be routed.** See [backup setup, Google Drive authentication, upload examples, limits, and recovery](docs/BACKUPS.md).
+
+## Site statistics and logs
+
+The **Statistics** tab and Overview show **Links Sent Successfully** and **Average Messages Per Chat** from site-authenticated aggregate snapshots. Your automation defines/calculates those values; the hub never invents activity. See [statistics reporting](docs/STATISTICS.md). Logs use inline 10-row pagination and a bounded table viewport; changing a log page does not reload the dashboard. Site tabs scroll horizontally only on small screens.
+
 ## Connect an automation VPS
+
+For new automation projects, use the [Python, Node.js, or Go VPS templates](templates/README.md). These include local `config.json`/`proxies.txt` synchronization, lifecycle hooks, telemetry/logging, and backups without requiring captcha integration.
 
 1. Add a site in the dashboard. Copy its **one-time agent token** and store it securely. Each site needs its own token. Rotation invalidates the previous token immediately.
 2. Install Python and copy the `agent/` directory onto the automation VPS. Install `agent/requirements.txt` in a virtual environment.
@@ -83,11 +95,12 @@ Each worker receives these environment variables at process creation:
 | --- | --- |
 | `HUB_WORKER_ID` | Stable UUID for this site's worker slot (dashboard name: `worker-1`, etc.) |
 | `AI_API_KEY` | Site's AI key, or empty |
-| `CAPTCHA_API_KEY` | Site's captcha service key, or empty |
 | `AI_PRESET_ID` | Site's preset ID |
 | `HUB_PROXIES_JSON` | JSON array of `{id,url,username,password}` |
 
-The supervisor's agent token is removed from the worker environment. Worker count changes reconcile within about 30 seconds. **Restart after changing API keys, preset, or proxies**, as existing process environments cannot be updated. Output is discarded by the sample supervisor to avoid accidental secret leakage; configure application logging explicitly in your own worker, without credentials. CPU/memory cover each direct worker process, not its whole descendant tree. `tasks_completed` is zero in the generic supervisor; instrument your custom integration for actual task counts.
+The supervisor's agent token is removed from the worker environment. Worker count changes reconcile within about 30 seconds. **Restart after changing API keys, preset, or proxies**, as existing process environments cannot be updated. Output is discarded by the sample supervisor to avoid accidental secret leakage; configure application logging explicitly in your own worker, without credentials. CPU/memory cover each direct worker process, not its whole descendant tree. The Python starter provides a local IPC hook for actual task counts and sanitized errors; uninstrumented workers correctly report zero completed tasks.
+
+The supervisor also writes local runtime files (default `./runtime`; set `--runtime-dir` to your script's existing file directory). On first enrollment it imports local proxies/settings only when the hub site is still pristine; subsequent dashboard edits and deletions are authoritative and update those files on refresh. See [local file behavior and conflict policy](templates/README.md#existing-proxiestxt-and-local-configuration). Site deletion does not erase VPS files. Captcha remains a legacy optional dashboard field; the new starter templates do not integrate it.
 
 Heartbeat interval: 15 seconds. Command polling: 5 seconds. Config refresh: 30 seconds. Failed workers remain visible as errors and require an explicit Restart instead of entering a crash loop. During hub/network outages the supervisor keeps its current workload; it retries requests without disabling TLS verification. A dashboard Stop cannot reach an offline VPS: stop its service directly in an emergency.
 

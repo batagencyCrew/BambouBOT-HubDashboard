@@ -1,0 +1,16 @@
+runtime/
+.env
+.env.*
+!.env.example
+config.json
+proxies.txt
+.sync.json
+workers.json
+commands.json
+backups.json
+backup-config.json
+*.tmp
+*.tar.gz
+rclone.conf
+cloud-config*
+node_modules/

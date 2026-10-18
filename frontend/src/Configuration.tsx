@@ -332,6 +332,8 @@ export default function Configuration({
             Blank fields preserve existing secrets. Use “Clear key” to
             explicitly remove a saved credential. Restart workers after changing
             API keys or the AI preset so the sample agent applies the new values.
+            Updated VPS agents also mirror saved settings to config.json and the
+            proxy pool to proxies.txt; local files refresh when the agent connects.
           </span>
         </div>
       </div>

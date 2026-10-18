@@ -8,6 +8,7 @@ export const auth = {
 export async function api<T>(
   path: string,
   options: RequestInit = {},
+  responseType: "json" | "blob" = "json",
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body) headers.set("Content-Type", "application/json");
@@ -42,6 +43,7 @@ export async function api<T>(
     throw new Error(message);
   }
   if (response.status === 204) return undefined as T;
+  if (responseType === "blob") return response.blob() as Promise<T>;
   return response.json() as Promise<T>;
 }
 

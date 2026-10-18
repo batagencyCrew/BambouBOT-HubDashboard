@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+runtime/
+agent-state/
+config.json
+proxies.txt
+backup-config.json
+.sync.json
+__pycache__/
+.venv/
+cloudconfigs/

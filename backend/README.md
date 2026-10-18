@@ -64,6 +64,28 @@ Built `frontend/dist` is served by the API with SPA fallback. Unknown `/api`
 routes and missing assets never return the SPA. Until frontend is built, only
 API endpoints are available.
 
+## Agent local enrollment
+
+`GET /api/agent/config` includes `revision` and `local_sync_initialized`.
+Site-token-only `POST /api/agent/local-sync` accepts a required nonnegative
+integer `expected_revision`, optional partial `config` (`ai_api_key`,
+`number_of_workers`, `ai_preset_id` only), and optional `proxies_content`.
+It returns the full decrypted agent configuration. Treat the response as secret.
+
+The first enrollment imports local values only for a pristine site; validation,
+encrypted storage, initialization, and revision increment are one transaction.
+Even empty enrollment initializes the site. Later calls never reimport files.
+Any administrator config PUT or proxy add/delete, and any proxy import inserting
+at least one row, permanently prevents automatic local import and increments
+the revision. Dry runs, rejected requests, and duplicate-only imports do neither.
+A stale revision returns 409 without mutation: fetch the latest configuration,
+then retry with only its `expected_revision` to finalize safely.
+
+Startup automatically adds persistent revision/enrollment columns to existing
+databases. All legacy sites are conservatively marked admin-modified: historical
+deletions cannot be inferred from an empty table. Their hub values remain
+authoritative; intentional proxy changes can use the admin import endpoint.
+
 ## Tests
 
 ```sh

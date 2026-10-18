@@ -2,7 +2,9 @@ import { useCallback, useState, type FormEvent } from "react";
 import {
   Activity,
   ArrowUpRight,
+  BarChart3,
   Bot,
+  CloudUpload,
   Check,
   Clock3,
   ExternalLink,
@@ -48,13 +50,17 @@ import { usePolling } from "./usePolling";
 import { Commands, ErrorList, Workers } from "./components";
 import Configuration from "./Configuration";
 import Proxies from "./Proxies";
+import Backups from "./Backups";
+import Stats from "./Stats";
 
 const tabs = [
   { id: "overview", label: "Overview", icon: Activity },
+  { id: "statistics", label: "Statistics", icon: BarChart3 },
   { id: "workers", label: "Workers", icon: Bot },
   { id: "logs", label: "Logs", icon: FileText },
   { id: "configuration", label: "Configuration", icon: Settings2 },
   { id: "proxies", label: "Proxies", icon: Network },
+  { id: "backups", label: "Backups", icon: CloudUpload },
 ] as const;
 type Tab = (typeof tabs)[number]["id"];
 
@@ -421,6 +427,7 @@ export default function SiteDetail({
         tabIndex={0}
         className="tab-content"
       >
+        {(tab === "overview" || tab === "statistics") && <Stats key={id} site={site} />}
         {tab === "overview" && (
           <>
             <div className="detail-stat-grid">
@@ -533,11 +540,11 @@ export default function SiteDetail({
                 <p>The latest reports from this site.</p>
               </div>
               <button className="text-button" onClick={() => setTab("logs")}>
-                View all logs
+                View latest logs
                 <ArrowUpRight size={15} />
               </button>
             </div>
-            <ErrorList errors={errors.slice(0, 8)} compact />
+            <ErrorList errors={errors} compact />
             <div className="danger-zone">
               <div>
                 <h3>Delete this site</h3>
@@ -584,7 +591,7 @@ export default function SiteDetail({
             <div className="section-heading inner-heading">
               <div>
                 <h2>Event logs</h2>
-                <p>Search reported messages and filter by severity.</p>
+                <p>Search the latest 100 reported events and filter by severity.</p>
               </div>
             </div>
             <ErrorList errors={errors} />
@@ -596,6 +603,7 @@ export default function SiteDetail({
         {tab === "proxies" && (
           <Proxies siteId={id} proxies={proxies} onChange={changed} />
         )}
+        {tab === "backups" && <Backups key={id} site={site} />}
       </section>
       <div className="detail-sync">
         {updatedAt && `Last synced ${updatedAt.toLocaleTimeString()}`} ·
@@ -635,6 +643,8 @@ export default function SiteDetail({
               associated data. The agent token will stop working. This action
               cannot be undone. Deletion does not stop worker processes on the
               VPS: stop them and verify they have stopped before deleting.
+              Active backup transfers or downloads prevent deletion. Once safe,
+              local backup cache and history are removed; cloud copies remain.
             </>
           ) : confirm === "rotate" ? (
             <>

@@ -87,3 +87,7 @@ Back up first, copy new source, then run `docker compose up -d --build`. Keep th
 | Browser cannot call API | Use bundled same-origin deployment or the Vite dev proxy, not an unrestricted CORS workaround |
 
 Monitor disk capacity and log growth; SQLite and site error history are intended for a modest control plane, not a high-volume log warehouse. Add external monitoring for `/api/health`, VM disk/memory, and backups. The health endpoint confirms the hub is reachable, not that every site is healthy.
+
+## Script backup routing
+
+The image includes rclone. Configure a provider remote using `docker compose exec hub rclone config --config /app/data/rclone.conf`, then add/select its destination in the dashboard's **Backups** tab. The same persistent volume holds staging files and the private rclone configuration; account for cache size when backing up the volume itself. Application quotas default to 1 GiB/upload and 10 GiB total cache, so provision additional VM disk capacity or tune `.env` accordingly. Only the backup-upload route bypasses the regular 1 MiB request limit in the included Caddy configuration. See [full backup setup and recovery](../docs/BACKUPS.md).

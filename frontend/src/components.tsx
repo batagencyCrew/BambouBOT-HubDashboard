@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
@@ -22,6 +22,8 @@ export function ErrorList({
 }) {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
+  const [page, setPage] = useState(1);
+  const viewport = useRef<HTMLDivElement>(null);
   const filtered = errors.filter(
     (error) =>
       (level === "all" || error.level === level) &&
@@ -29,6 +31,17 @@ export function ErrorList({
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const visible = filtered.slice(start, start + pageSize);
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+  useEffect(() => {
+    if (viewport.current) viewport.current.scrollTop = 0;
+  }, [currentPage, search, level]);
   return (
     <div className="panel events-panel">
       <div className="events-toolbar">
@@ -38,13 +51,19 @@ export function ErrorList({
             aria-label="Search event logs"
             placeholder="Search messages, sites, or workers…"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
           />
         </label>
         <select
           aria-label="Filter event severity"
           value={level}
-          onChange={(event) => setLevel(event.target.value)}
+          onChange={(event) => {
+            setLevel(event.target.value);
+            setPage(1);
+          }}
         >
           <option value="all">All severities</option>
           <option value="error">Error</option>
@@ -52,8 +71,8 @@ export function ErrorList({
           <option value="info">Info</option>
         </select>
       </div>
+      <div ref={viewport} className="table-scroll events-table-viewport" tabIndex={0} role="region" aria-label="Event log table">
       {filtered.length ? (
-        <div className="table-scroll">
           <table className={`events-table ${compact ? "compact" : ""}`}>
             <thead>
               <tr>
@@ -65,7 +84,7 @@ export function ErrorList({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((error) => (
+              {visible.map((error) => (
                 <tr key={error.id}>
                   <td>
                     <span className={`severity severity-${error.level}`}>
@@ -107,7 +126,6 @@ export function ErrorList({
               ))}
             </tbody>
           </table>
-        </div>
       ) : (
         <Empty title={errors.length ? "No matching events" : "All quiet here"}>
           {errors.length
@@ -115,6 +133,17 @@ export function ErrorList({
             : "Reported events will appear here as your agents send them."}
         </Empty>
       )}
+      </div>
+      <div className="log-pagination">
+        <span aria-live="polite">
+          Showing {filtered.length ? start + 1 : 0}–{Math.min(start + pageSize, filtered.length)} of {filtered.length} events
+        </span>
+        <div className="log-pagination-controls">
+          <button type="button" className="button small" aria-label="Previous log page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+          <span>Page {currentPage} of {totalPages}</span>
+          <button type="button" className="button small" aria-label="Next log page" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+        </div>
+      </div>
       <div className="panel-footnote">
         <span>
           {filtered.length} {filtered.length === 1 ? "event" : "events"}
@@ -122,7 +151,7 @@ export function ErrorList({
         <span>
           {compact
             ? "Latest events reported to the hub"
-            : "Most recent 100 events · Times shown in your local timezone"}
+             : "Latest fetched events · Times shown in your local timezone"}
         </span>
       </div>
     </div>

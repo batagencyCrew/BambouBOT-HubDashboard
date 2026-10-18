@@ -10,6 +10,12 @@ export interface Site {
   worker_count: number;
   healthy_workers: number;
 }
+export interface Statistics {
+  site_id: string;
+  links_sent_successfully: number | null;
+  average_messages_per_chat: number | null;
+  updated_at: string | null;
+}
 export interface Worker {
   id: string;
   name: string;

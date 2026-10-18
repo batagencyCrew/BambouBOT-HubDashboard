@@ -26,6 +26,13 @@ def main():
             port = sock.getsockname()[1]
         origin = f"http://127.0.0.1:{port}"
         env = dict(os.environ, HUB_ADMIN_PASSWORD="browser-smoke-only-password", HUB_DATA_DIR=directory + "/data")
+        cloud = Path(directory) / "cloud"
+        cloud.mkdir()
+        cloud_config = Path(directory) / "rclone.conf"
+        cloud_config.write_text(f"[browser]\ntype = alias\nremote = {cloud}\n")
+        cloud_config.chmod(0o600)
+        env["HUB_RCLONE_CONFIG"] = str(cloud_config)
+        env["HUB_BACKUP_WORKER_ENABLED"] = "true"
         env.pop("HUB_ENCRYPTION_KEY", None)
         with open(directory + "/server.log", "w") as log:
             server = subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1",
@@ -49,6 +56,7 @@ def main():
                         launch["args"] = ["--no-sandbox"]
                     browser = playwright.chromium.launch(**launch)
                     page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+                    page.emulate_media(reduced_motion="reduce")
                     errors = []
                     page.on("pageerror", lambda error: errors.append(str(error)))
                     preset_requests = []
@@ -233,6 +241,26 @@ def main():
                     # Queuing Stop must not fabricate a stopped worker snapshot.
                     expect(page.get_by_role("tabpanel").get_by_text("running", exact=True)).to_be_visible()
 
+                    page.get_by_role("tab", name="Statistics", exact=True).click()
+                    statistics = page.get_by_role("region", name="Site statistics", exact=True)
+                    expect(statistics.get_by_text("Links Sent Successfully", exact=True)).to_be_visible()
+                    expect(statistics.get_by_text("Average Messages Per Chat", exact=True)).to_be_visible()
+                    assert api("GET", base + "/statistics")["updated_at"] is None
+                    agent_api("POST", "/statistics", json={"links_sent_successfully": 274, "average_messages_per_chat": 6.25})
+                    # A repeated absolute snapshot must not double counters.
+                    agent_api("POST", "/statistics", json={"links_sent_successfully": 274, "average_messages_per_chat": 6.25})
+                    assert api("GET", base + "/statistics")["links_sent_successfully"] == 274
+                    expect(statistics.get_by_text("274", exact=True)).to_be_visible(timeout=15000)
+                    expect(statistics.get_by_text("6.25", exact=True)).to_be_visible()
+                    agent_api("POST", "/statistics", json={"links_sent_successfully": 0, "average_messages_per_chat": 0})
+                    expect(statistics.locator(".detail-stat strong").first).to_have_text("0", timeout=15000)
+                    expect(statistics.locator(".detail-stat strong").last).to_have_text("0")
+                    agent_api("POST", "/statistics", json={"links_sent_successfully": 274, "average_messages_per_chat": None})
+                    expect(statistics.locator(".detail-stat strong").last).to_have_text("—", timeout=15000)
+                    agent_api("POST", "/statistics", json={"links_sent_successfully": 274, "average_messages_per_chat": 6.25})
+                    expect(statistics.get_by_text("6.25", exact=True)).to_be_visible(timeout=15000)
+                    page.screenshot(path=str(screenshots / "statistics-desktop.png"), full_page=True)
+
                     page.get_by_role("tab", name="Logs", exact=True).click()
                     page.get_by_label("Filter event severity").select_option("warning")
                     expect(page.get_by_text("Job timeout reported", exact=True)).to_be_visible()
@@ -242,7 +270,34 @@ def main():
                     page.get_by_label("Search event logs").fill("")
                     page.get_by_label("Filter event severity").select_option("all")
 
+                    for number in range(25):
+                        agent_api("POST", "/errors", json={"level": "info", "message": f"Pagination fixture {number:02d}"})
+                    page.get_by_role("button", name="Refresh site", exact=True).click()
+                    events = page.locator(".events-panel")
+                    expect(events.locator("tbody tr")).to_have_count(10)
+                    expect(events.get_by_role("button", name="Previous log page", exact=True)).to_be_disabled()
+                    first_page = events.locator("tbody").inner_text()
+                    page.evaluate("window.__inlinePaginationSentinel = true")
+                    events.get_by_role("button", name="Next log page", exact=True).click()
+                    expect(events.locator("tbody tr")).to_have_count(10)
+                    assert events.locator("tbody").inner_text() != first_page
+                    assert page.evaluate("window.__inlinePaginationSentinel === true"), "Pagination must not reload the page"
+                    page.get_by_role("button", name="Refresh site", exact=True).click()
+                    expect(events.get_by_text("Page 2 of 3", exact=True)).to_be_visible()
+                    events.get_by_role("button", name="Next log page", exact=True).click()
+                    expect(events.locator("tbody tr")).to_have_count(7)
+                    expect(events.get_by_role("button", name="Next log page", exact=True)).to_be_disabled()
+                    # Filtering from a later page resets only this table's page.
+                    page.get_by_label("Filter event severity").select_option("warning")
+                    expect(events.locator("tbody tr")).to_have_count(1)
+                    expect(page.get_by_text("Job timeout reported", exact=True)).to_be_visible()
+                    expect(events.get_by_role("button", name="Previous log page", exact=True)).to_be_disabled()
+                    page.get_by_label("Filter event severity").select_option("all")
+                    expect(events.locator("tbody tr")).to_have_count(10)
+                    page.screenshot(path=str(screenshots / "logs-pagination.png"), full_page=True)
+
                     page.get_by_role("tab", name="Overview", exact=True).click()
+                    expect(page.get_by_role("region", name="Site statistics").get_by_text("274", exact=True)).to_be_visible()
                     page.screenshot(path=str(screenshots / "site-desktop.png"), full_page=True)
                     page.get_by_role("button", name="Workspace", exact=True).click()
                     expect(page.locator(".site-card")).to_be_visible()
@@ -257,9 +312,83 @@ def main():
                     page.locator(".site-card").click()
                     expect(page.get_by_role("heading", name="Production storefront", exact=True)).to_be_visible()
                     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile detail overflow"
+                    tabs = page.get_by_role("tablist", name="Site sections")
+                    assert tabs.evaluate("el => getComputedStyle(el).overflowY === 'hidden' && el.scrollHeight <= el.clientHeight + 1"), "Site tabs must not scroll vertically"
+                    assert tabs.evaluate("el => el.scrollWidth > el.clientWidth"), "Mobile tabs should scroll horizontally"
+                    page.get_by_role("tab", name="Statistics", exact=True).click()
+                    expect(page.get_by_role("region", name="Site statistics").get_by_text("6.25", exact=True)).to_be_visible()
+                    page.screenshot(path=str(screenshots / "statistics-mobile.png"), full_page=True)
+                    page.get_by_role("tab", name="Overview", exact=True).click()
                     page.screenshot(path=str(screenshots / "site-mobile.png"), full_page=True)
 
                     page.set_viewport_size({"width": 1440, "height": 1000})
+                    page.get_by_role("tab", name="Backups", exact=True).click()
+                    expect(page.get_by_text("No uploads received", exact=True)).to_be_visible()
+                    expect(page.get_by_role("button", name="Request backup", exact=True)).to_be_disabled()
+                    page.get_by_role("button", name="Add destination", exact=True).click()
+                    dialog = page.get_by_role("dialog")
+                    dialog.get_by_label("Destination name").fill("Browser cloud")
+                    dialog.get_by_label("Configured remote").select_option("browser")
+                    dialog.get_by_label("Cloud folder").fill("BrowserBackups")
+                    dialog.get_by_role("button", name="Add shared destination", exact=True).click()
+                    page.get_by_role("dialog").get_by_role("button", name="Add shared destination", exact=True).click()
+                    expect(page.get_by_role("dialog")).not_to_be_visible()
+                    page.get_by_role("checkbox", name=re.compile("^Browser cloud")).check()
+                    page.get_by_role("switch").check()
+                    page.get_by_label("Interval in minutes").fill("30")
+                    page.get_by_role("button", name="Save settings", exact=True).click()
+                    expect(page.get_by_text("Backup settings saved.", exact=False)).to_be_visible()
+                    page.get_by_label("Interval in minutes").fill("45")
+                    page.get_by_role("button", name="Refresh backups", exact=True).click()
+                    expect(page.get_by_label("Interval in minutes")).to_have_value("45")
+                    page.get_by_role("button", name="Discard edits", exact=True).click()
+                    expect(page.get_by_label("Interval in minutes")).to_have_value("30")
+                    with page.expect_response(lambda response: response.url.endswith("/backups/request")) as pending_backup:
+                        page.get_by_role("button", name="Request backup", exact=True).click()
+                    request_id = pending_backup.value.json()["id"]
+                    expect(page.locator(".backup-request .badge").first).to_have_text("pending")
+                    agent_api("GET", "/backup-requests")
+                    payload = b"Any file type, including binary data: \x00\xff"
+                    uploaded = requests.post(origin + "/api/agent/backups/upload", headers={**agent_headers, "Content-Type": "application/octet-stream"},
+                                             params={"filename": "example.data", "source": "on_demand", "request_id": request_id},
+                                             data=payload, timeout=10)
+                    uploaded.raise_for_status()
+                    backup_id = uploaded.json()["id"]
+                    deadline = time.monotonic() + 30
+                    while time.monotonic() < deadline:
+                        history = api("GET", base + "/backups")
+                        if any(item["id"] == backup_id and item["status"] == "completed" for item in history["backups"]):
+                            break
+                        time.sleep(0.2)
+                    else:
+                        raise AssertionError("Browser backup did not route to isolated test cloud")
+                    cloud_file = cloud / "BrowserBackups" / site_id / backup_id / "example.data"
+                    assert cloud_file.read_bytes() == payload
+                    page.get_by_role("button", name="Refresh backups", exact=True).click()
+                    expect(page.locator(".backup-record > .backup-row .badge").first).to_have_text("completed")
+                    expect(page.locator(".backup-request .badge").first).to_have_text("uploaded")
+                    page.screenshot(path=str(screenshots / "backups-desktop.png"), full_page=True)
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile backups overflow"
+                    page.screenshot(path=str(screenshots / "backups-mobile.png"), full_page=True)
+                    page.set_viewport_size({"width": 1440, "height": 1000})
+                    with page.expect_download() as downloaded:
+                        page.get_by_role("button", name="Download cached example.data", exact=True).click()
+                    assert Path(downloaded.value.path()).read_bytes() == payload
+                    page.get_by_role("button", name="Evict cached example.data", exact=True).click()
+                    page.get_by_role("dialog").get_by_role("button", name="Evict local cache", exact=True).click()
+                    expect(page.get_by_role("button", name="Download cached example.data", exact=True)).to_be_disabled()
+                    assert cloud_file.exists()
+                    page.get_by_role("switch").uncheck()
+                    page.get_by_role("checkbox", name=re.compile("^Browser cloud")).uncheck()
+                    page.get_by_role("button", name="Save settings", exact=True).click()
+                    expect(page.get_by_text("Backup settings saved.", exact=False)).to_be_visible()
+                    page.get_by_role("button", name="Delete shared destination Browser cloud", exact=True).click()
+                    page.get_by_role("dialog").get_by_role("button", name="Delete shared destination", exact=True).click()
+                    expect(page.get_by_role("dialog")).not_to_be_visible()
+                    expect(page.get_by_text("No cloud destinations", exact=True)).to_be_visible()
+                    assert cloud_file.exists()
+                    page.get_by_role("tab", name="Overview", exact=True).click()
                     page.get_by_role("button", name="Rotate agent token", exact=True).click()
                     page.get_by_role("dialog").get_by_role("button", name="Rotate token", exact=True).click()
                     expect(page.get_by_role("heading", name="Your agent token")).to_be_visible()
@@ -276,7 +405,7 @@ def main():
                     assert errors == [], errors
                     browser.close()
                     session.close()
-                    print("Browser smoke passed: auth, sites, secrets, proxy types and file imports, telemetry, commands, logs, mobile, rotation, deletion")
+                    print("Browser smoke passed: statistics, inline log pagination, horizontal-only tabs, auth, proxies, controls and cloud backups")
                     print("Screenshots: .qa/screenshots/")
             finally:
                 server.terminate()

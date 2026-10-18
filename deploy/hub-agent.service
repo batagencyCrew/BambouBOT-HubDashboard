@@ -10,6 +10,9 @@ Group=automation
 WorkingDirectory=/opt/HubDashboard
 EnvironmentFile=/etc/hub-agent.env
 # Replace the command with your own script and absolute Python path.
+# Optionally add --backup-dir /opt/your-script to enable packaging that codebase.
+# Set HUB_RUNTIME_DIR=/opt/your-script/runtime (or its existing config/proxy folder)
+# in /etc/hub-agent.env to choose where private dashboard-managed files are mirrored.
 ExecStart=/opt/HubDashboard/.venv/bin/python agent/agent.py --state-dir /var/lib/hub-agent --command "/opt/HubDashboard/.venv/bin/python /opt/HubDashboard/agent/demo_worker.py"
 Restart=on-failure
 RestartSec=5

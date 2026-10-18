@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import secrets
@@ -134,6 +135,18 @@ class PresetsRequest(Model):
         return values
 
 
+class LocalConfig(Model):
+    ai_api_key: SecretStr = Field(default=SecretStr(""), max_length=8192)
+    number_of_workers: int = Field(default=1, ge=0, le=MAX_WORKERS, strict=True)
+    ai_preset_id: str = Field(default="default", min_length=1, max_length=200)
+
+
+class LocalSync(Model):
+    expected_revision: int = Field(ge=0, strict=True)
+    config: LocalConfig = Field(default_factory=LocalConfig)
+    proxies_content: str = Field(default="", repr=False)
+
+
 def fetch_presets(api_key: str) -> dict:
     """Fetch a bounded, normalized catalogue without forwarding provider errors."""
     # The sync route runs in FastAPI's worker pool, not an existing event loop.
@@ -234,6 +247,11 @@ class Heartbeat(Model):
         return self
 
 
+class StatisticsInput(Model):
+    links_sent_successfully: int = Field(ge=0, le=9007199254740991, strict=True)
+    average_messages_per_chat: float | None = Field(ge=0, le=1_000_000_000, strict=True)
+
+
 class ErrorInput(Model):
     worker_id: UUID | None = None
     level: Literal["info", "warning", "error"]
@@ -301,7 +319,10 @@ class Storage:
                     number_of_workers INTEGER NOT NULL DEFAULT 1,
                     ai_preset_id TEXT NOT NULL DEFAULT 'default',
                     ai_api_key TEXT NOT NULL DEFAULT '', captcha_api_key TEXT NOT NULL DEFAULT '',
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    admin_modified INTEGER NOT NULL DEFAULT 0,
+                    local_sync_initialized INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS workers (
                     site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -327,7 +348,27 @@ class Storage:
                 );
                 CREATE INDEX IF NOT EXISTS commands_site_time ON commands(site_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS proxies_site ON proxies(site_id);
+                CREATE TABLE IF NOT EXISTS statistics (
+                    site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+                    links_sent_successfully INTEGER NOT NULL
+                        CHECK (links_sent_successfully BETWEEN 0 AND 9007199254740991),
+                    average_messages_per_chat REAL
+                        CHECK (average_messages_per_chat BETWEEN 0 AND 1000000000),
+                    updated_at TEXT NOT NULL
+                );
             """)
+            # executescript commits its surrounding transaction. Reacquire the
+            # SQLite write lock before inspecting/migrating (also multi-process).
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(configs)")}
+            legacy = "admin_modified" not in columns
+            for column in ("revision", "admin_modified", "local_sync_initialized"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE configs ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
+            if legacy:
+                # Historical deletes/writes cannot be inferred from current data.
+                # Fail closed for all pre-migration sites, even apparently empty ones.
+                db.execute("UPDATE configs SET admin_modified=1")
 
     @contextmanager
     def transaction(self):
@@ -351,7 +392,7 @@ class BodyLimit:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
+        if scope["type"] != "http" or scope.get("path") == "/api/agent/backups/upload":
             return await self.app(scope, receive, send)
         # Bound streamed bodies as well as Content-Length. Buffer before routing so
         # a rejected request cannot partially mutate persistent state.
@@ -440,6 +481,9 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def invalid_input(request, exc):
         # Pydantic's default errors include input values (including passwords).
+        if request.url.path == "/api/agent/local-sync":
+            logging.getLogger(__name__).warning("Invalid local sync request")
+            return JSONResponse(status_code=422, content={"detail": "Invalid local sync request"})
         if request.url.path.endswith("/proxies/import"):
             return JSONResponse(status_code=422, content={"detail": "Invalid proxy import request"})
         return JSONResponse(status_code=422, content={"detail": [
@@ -490,7 +534,7 @@ def create_app(
         return {**{k: row[k] for k in ("id", "name", "url", "description", "desired_state", "last_seen", "created_at")}, "status": status, "worker_count": len(workers), "healthy_workers": healthy}
 
     def config_output(row):
-        return {"number_of_workers": row["number_of_workers"], "ai_preset_id": row["ai_preset_id"], "has_ai_api_key": bool(row["ai_api_key"]), "has_captcha_api_key": bool(row["captcha_api_key"]), "updated_at": row["updated_at"]}
+        return {"number_of_workers": row["number_of_workers"], "ai_preset_id": row["ai_preset_id"], "has_ai_api_key": bool(row["ai_api_key"]), "has_captcha_api_key": bool(row["captcha_api_key"]), "updated_at": row["updated_at"], "revision": row["revision"]}
 
     def proxy_output(row):
         return {**{k: row[k] for k in ("id", "url", "username", "created_at")}, "has_password": bool(row["password"])}
@@ -498,11 +542,29 @@ def create_app(
     def command_output(row):
         return {k: row[k] for k in ("id", "action", "status", "created_at", "completed_at", "message")}
 
+    def statistics_output(db, site_id):
+        row = db.execute("SELECT * FROM statistics WHERE site_id=?", (site_id,)).fetchone()
+        return {"site_id": site_id, **{
+            key: row[key] if row is not None else None
+            for key in ("links_sent_successfully", "average_messages_per_chat", "updated_at")
+        }}
+
     def encrypt(value: str) -> str:
         return cipher.encrypt(value.encode()).decode() if value else ""
 
     def decrypt(value: str) -> str:
         return cipher.decrypt(value.encode()).decode() if value else ""
+
+    def agent_config_output(db, site_id):
+        row = db.execute("SELECT * FROM configs WHERE site_id=?", (site_id,)).fetchone()
+        return {"number_of_workers": row["number_of_workers"], "ai_preset_id": row["ai_preset_id"],
+                "ai_api_key": decrypt(row["ai_api_key"]), "captcha_api_key": decrypt(row["captcha_api_key"]),
+                "revision": row["revision"], "local_sync_initialized": bool(row["local_sync_initialized"]),
+                "proxies": [{"id": p["id"], "url": p["url"], "username": p["username"], "password": decrypt(p["password"])}
+                            for p in db.execute("SELECT * FROM proxies WHERE site_id=? ORDER BY created_at,id", (site_id,))]}
+
+    def admin_config_changed(db, site_id):
+        db.execute("UPDATE configs SET admin_modified=1,revision=revision+1,updated_at=? WHERE site_id=?", (now(), str(site_id)))
 
     def error_rows(db, site_id=None, limit=100):
         query = "SELECT e.*, s.name AS site_name FROM errors e JOIN sites s ON s.id=e.site_id"
@@ -576,8 +638,9 @@ def create_app(
 
     @app.delete("/api/sites/{site_id}", dependencies=admin_dependencies, status_code=204)
     def delete_site(site_id: UUID):
-        with store.transaction() as db:
+        with app.state.backups.file_lock, store.transaction() as db:
             site_row(db, str(site_id))
+            app.state.backups.guard_site_deletion(db, str(site_id))
             db.execute("DELETE FROM sites WHERE id=?", (str(site_id),))
         return Response(status_code=204)
 
@@ -586,6 +649,12 @@ def create_app(
         with store.transaction() as db:
             site_row(db, str(site_id))
             return [{k: r[k] for k in ("id", "name", "status", "cpu_percent", "memory_mb", "tasks_completed", "last_seen")} for r in db.execute("SELECT * FROM workers WHERE site_id=? ORDER BY name,id", (str(site_id),))]
+
+    @app.get("/api/sites/{site_id}/statistics", dependencies=admin_dependencies)
+    def statistics(site_id: UUID):
+        with store.transaction() as db:
+            site_row(db, str(site_id))
+            return statistics_output(db, str(site_id))
 
     @app.get("/api/sites/{site_id}/errors", dependencies=admin_dependencies)
     def errors(site_id: UUID, limit: Annotated[int, Query(ge=1, le=1000)] = 100):
@@ -607,6 +676,7 @@ def create_app(
             ai = encrypt(body.ai_api_key.get_secret_value()) if body.ai_api_key is not None else row["ai_api_key"]
             captcha = encrypt(body.captcha_api_key.get_secret_value()) if body.captcha_api_key is not None else row["captcha_api_key"]
             db.execute("UPDATE configs SET number_of_workers=?,ai_preset_id=?,ai_api_key=?,captcha_api_key=?,updated_at=? WHERE site_id=?", (body.number_of_workers, body.ai_preset_id, ai, captcha, now(), str(site_id)))
+            admin_config_changed(db, site_id)
             return config_output(db.execute("SELECT * FROM configs WHERE site_id=?", (str(site_id),)).fetchone())
 
     @app.post("/api/sites/{site_id}/presets", dependencies=admin_dependencies)
@@ -636,6 +706,7 @@ def create_app(
             if db.execute("SELECT COUNT(*) FROM proxies WHERE site_id=?", (str(site_id),)).fetchone()[0] >= MAX_PROXIES:
                 raise HTTPException(409, "Proxy limit reached")
             db.execute("INSERT INTO proxies(id,site_id,url,username,password,created_at) VALUES(?,?,?,?,?,?)", (proxy_id, str(site_id), body.url, body.username, encrypt(body.password.get_secret_value()), now()))
+            admin_config_changed(db, site_id)
             return proxy_output(db.execute("SELECT * FROM proxies WHERE id=?", (proxy_id,)).fetchone())
 
     @app.post("/api/sites/{site_id}/proxies/import", dependencies=admin_dependencies)
@@ -667,6 +738,8 @@ def create_app(
                     db.execute("INSERT INTO proxies(id,site_id,url,username,password,created_at) VALUES(?,?,?,?,?,?)",
                                (uid(), str(site_id), entry.url, entry.username, encrypt(entry.password), now()))
                 imported = len(new)
+                if imported:
+                    admin_config_changed(db, site_id)
             return {"total": total, "valid": len(new), "duplicates": len(entries) - len(new),
                     "imported": imported, "can_import": not errors and bool(new) and body.dry_run,
                     "errors": errors, "entries": previews}
@@ -677,6 +750,7 @@ def create_app(
             site_row(db, str(site_id))
             if db.execute("DELETE FROM proxies WHERE site_id=? AND id=?", (str(site_id), str(proxy_id))).rowcount == 0:
                 raise HTTPException(404, "Proxy not found")
+            admin_config_changed(db, site_id)
         return Response(status_code=204)
 
     @app.post("/api/sites/{site_id}/commands", dependencies=admin_dependencies, status_code=201)
@@ -716,12 +790,54 @@ def create_app(
             db.executemany("INSERT INTO workers(site_id,id,name,status,cpu_percent,memory_mb,tasks_completed,last_seen) VALUES(?,?,?,?,?,?,?,?)", [(site_id, str(w.id), w.name, w.status, w.cpu_percent, w.memory_mb, w.tasks_completed, timestamp) for w in body.workers])
             return {"site_id": site_id, "desired_state": site_row(db, site_id)["desired_state"], "server_time": timestamp}
 
+    @app.post("/api/agent/statistics")
+    def report_statistics(body: StatisticsInput, site_id: Annotated[str, Depends(agent)]):
+        with store.transaction() as db:
+            site_row(db, site_id)
+            # Absolute whole-site snapshots: retries replace values, never add.
+            db.execute(
+                "INSERT INTO statistics(site_id,links_sent_successfully,average_messages_per_chat,updated_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(site_id) DO UPDATE SET "
+                "links_sent_successfully=excluded.links_sent_successfully,"
+                "average_messages_per_chat=excluded.average_messages_per_chat,updated_at=excluded.updated_at",
+                (site_id, body.links_sent_successfully, body.average_messages_per_chat, now()),
+            )
+            return statistics_output(db, site_id)
+
     @app.get("/api/agent/config")
     def agent_config(site_id: Annotated[str, Depends(agent)]):
         with store.transaction() as db:
             site_row(db, site_id)
+            return agent_config_output(db, site_id)
+
+    @app.post("/api/agent/local-sync")
+    def local_sync(body: LocalSync, site_id: Annotated[str, Depends(agent)]):
+        with store.transaction() as db:
+            site_row(db, site_id)
             row = db.execute("SELECT * FROM configs WHERE site_id=?", (site_id,)).fetchone()
-            return {"number_of_workers": row["number_of_workers"], "ai_preset_id": row["ai_preset_id"], "ai_api_key": decrypt(row["ai_api_key"]), "captcha_api_key": decrypt(row["captcha_api_key"]), "proxies": [{"id": p["id"], "url": p["url"], "username": p["username"], "password": decrypt(p["password"])} for p in db.execute("SELECT * FROM proxies WHERE site_id=? ORDER BY created_at,id", (site_id,))]}
+            if body.expected_revision != row["revision"]:
+                raise HTTPException(409, "Configuration revision changed; fetch latest and retry without local data")
+            # Schema is always validated; file content is only relevant while
+            # pristine. Never parse/reimport local files after hub ownership.
+            if row["local_sync_initialized"]:
+                return agent_config_output(db, site_id)
+            if not row["admin_modified"]:
+                _, entries, errors = parse_file(body.proxies_content, "http")
+                if errors:
+                    logging.getLogger(__name__).warning("Invalid local sync proxy content")
+                    raise HTTPException(422, "Invalid local sync proxy content")
+                config = body.config
+                db.execute("UPDATE configs SET number_of_workers=?,ai_preset_id=?,ai_api_key=? WHERE site_id=?",
+                           (config.number_of_workers, config.ai_preset_id, encrypt(config.ai_api_key.get_secret_value()), site_id))
+                identities = set()
+                for entry in entries:
+                    if entry.identity in identities:
+                        continue
+                    identities.add(entry.identity)
+                    db.execute("INSERT INTO proxies(id,site_id,url,username,password,created_at) VALUES(?,?,?,?,?,?)",
+                               (uid(), site_id, entry.url, entry.username, encrypt(entry.password), now()))
+            db.execute("UPDATE configs SET local_sync_initialized=1,revision=revision+1,updated_at=? WHERE site_id=?", (now(), site_id))
+            return agent_config_output(db, site_id)
 
     @app.post("/api/agent/errors", status_code=201)
     def report_error(body: ErrorInput, site_id: Annotated[str, Depends(agent)]):
@@ -751,6 +867,9 @@ def create_app(
                 raise HTTPException(409, "Command is already terminal or superseded")
             db.execute("UPDATE commands SET status=?,message=?,completed_at=? WHERE id=? AND site_id=?", (body.status, body.message, now(), str(command_id), site_id))
             return command_output(db.execute("SELECT * FROM commands WHERE id=?", (str(command_id),)).fetchone())
+
+    from .backups import install_backups
+    install_backups(app, store, admin, agent, directory)
 
     frontend = Path(frontend_dir) if frontend_dir is not None else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     frontend = frontend.resolve()

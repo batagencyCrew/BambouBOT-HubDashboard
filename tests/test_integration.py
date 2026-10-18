@@ -56,6 +56,17 @@ def test_real_hub_agent_lifecycle(tmp_path):
             created = api("POST", "/sites", json={"name": "Integration VPS", "url": "https://example.com"})
             site_id = created["site"]["id"]
             base = f"/sites/{site_id}"
+            missing_stats = api("GET", base + "/statistics")
+            assert missing_stats["updated_at"] is None and missing_stats["links_sent_successfully"] is None
+            snapshot = {"links_sent_successfully": 42, "average_messages_per_chat": 3.75}
+            for _ in range(2):
+                stats_response = requests.post(origin + "/api/agent/statistics",
+                                               headers={"Authorization": "Bearer " + created["agent_token"]},
+                                               json=snapshot, timeout=5)
+                stats_response.raise_for_status()
+            reported_stats = api("GET", base + "/statistics")
+            assert reported_stats["links_sent_successfully"] == 42
+            assert reported_stats["average_messages_per_chat"] == 3.75 and reported_stats["updated_at"]
             api("PUT", base + "/config", json={"number_of_workers": 1, "ai_preset_id": "test", "ai_api_key": "test-secret"})
             import_payload = {"content": "proxy.example.com:1080:integration-user:integration-password\n",
                               "proxy_type": "socks5", "dry_run": True}
@@ -77,6 +88,7 @@ def test_real_hub_agent_lifecycle(tmp_path):
             assert runtime_config.json()["proxies"][0]["password"] == "integration-password"
             agent_env = dict(env, HUB_URL=origin, HUB_AGENT_TOKEN=created["agent_token"])
             agent = subprocess.Popen([sys.executable, "agent/agent.py", "--state-dir", str(tmp_path / "agent"),
+                                      "--runtime-dir", str(tmp_path / "runtime"),
                                       "--command", f"{sys.executable} {ROOT / 'agent/demo_worker.py'}"],
                                      cwd=ROOT, env=agent_env, stdout=log, stderr=log)
             wait_until(lambda: api("GET", base)["status"] == "healthy")

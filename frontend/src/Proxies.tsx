@@ -105,7 +105,7 @@ export default function Proxies({
           <h2>
             Proxy pool <span className="count">{proxies.length}</span>
           </h2>
-          <p>Connection routes available to this site’s agent.</p>
+          <p>Connection routes available to this site’s agent. Updated agents mirror this pool to local proxies.txt, including deletions.</p>
         </div>
         <div className="proxy-actions">
         <button className="button" onClick={() => setImporting(true)}>

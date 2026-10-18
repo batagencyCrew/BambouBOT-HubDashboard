@@ -41,3 +41,15 @@ Bearer site-scoped agent token; no dashboard access. All endpoints `/api/agent`:
 - POST `/commands/{id}/ack` `{status:'completed'|'failed',message?}` => Command
 
 Agent poll interval 5s; heartbeat 15s; refresh config 30s. Commands are explicit local lifecycle hooks, never arbitrary shell received remotely. HTTPS required publicly. Do not log secret material. Keys encrypted at rest with persistent Fernet key in HUB_ENCRYPTION_KEY. SQLite data in HUB_DATA_DIR (default ./data).
+
+## Backup API
+
+Backup schedules, arbitrary-file streaming uploads, cloud routing, and on-demand requests use a separate durable queue from worker lifecycle commands. See [backup API contract](docs/BACKUP_CONTRACT.md) and [operator setup](docs/BACKUPS.md). Cloud credentials are configured through rclone on the hub and are never returned to the dashboard or site agents.
+
+## VPS local-file synchronization
+
+`GET /api/agent/config` additionally returns `revision` and `local_sync_initialized`. The authenticated `POST /api/agent/local-sync` performs revision-checked, one-time import of existing local config/proxies only for a pristine hub site; afterward the hub is authoritative. Admin configuration/proxy changes increment the revision. See [full synchronization contract](docs/VPS_TEMPLATE_CONTRACT.md) and [language starters](templates/README.md).
+
+## Site statistics
+
+Agent POST `/api/agent/statistics` accepts `{links_sent_successfully:integer,average_messages_per_chat:number|null}` absolute whole-site snapshots; administrator GET `/api/sites/{id}/statistics` returns those metrics plus `site_id` and `updated_at` (all metric/timestamp fields null before first report). Repeat submissions replace, never increment. See [reporting semantics](docs/STATISTICS.md) and [validation contract](docs/STATISTICS_CONTRACT.md).

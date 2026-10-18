@@ -33,7 +33,7 @@ def test_formats_and_normalization(text, default, url, username, password):
     "2001:db8::1:1080", "[bad]:80", "[::1]80", "[fe80::1%25eth0]:80", "[127.0.0.1]:80",
     "-host:80", "host-:80", "bad_host:80", "a..b:80", "host..:80", "256.1.1.1:80", "a%2eb:80",
     "host:80 ", " host:80", "ho\tst:80", "ho\x00st:80", "host:80\x7f", "ho\u200bst:80",
-    "ho\ufffdst:80", "u:%FF@host:80", "u:%00@host:80", "u:%20@host:80", "u:%EF%BF%BD@host:80",
+    "ho\ufffdst:80", "u:%FF@host:80", "u:%00@host:80", "u:%0A@host:80", "u:%EF%BF%BD@host:80",
     "u:%zz@host:80", "u:p@ss@host:80", "user@host:80", "host:80:user", "host\\evil:80",
     "http://u:p@host:80/secret", "host:80:u:" + "p" * 4097,
 ])

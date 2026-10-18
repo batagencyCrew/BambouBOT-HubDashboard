@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 from hub.app import create_app
 
 
+@pytest.fixture(autouse=True)
+def isolated_backup_worker(monkeypatch):
+    monkeypatch.setenv("HUB_BACKUP_WORKER_ENABLED", "false")
+
+
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     for key in ("HUB_ADMIN_PASSWORD", "HUB_ENCRYPTION_KEY", "HUB_CORS_ORIGINS", "HUB_DATA_DIR"):

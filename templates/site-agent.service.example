@@ -1,0 +1,27 @@
+[Unit]
+Description=Site automation hub agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=automation
+Group=automation
+WorkingDirectory=/opt/your-script
+EnvironmentFile=/etc/your-script-hub.env
+# Choose ONE entrypoint and replace paths. Python needs the shared agent/ tree.
+ExecStart=/opt/HubDashboard/.venv/bin/python /opt/HubDashboard/templates/python/main.py
+# Node: ExecStart=/usr/bin/node /opt/HubDashboard/templates/node/main.mjs
+# Go:   ExecStart=/opt/your-script/site-agent
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+StateDirectory=your-script-hub
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

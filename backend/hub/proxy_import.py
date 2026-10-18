@@ -17,6 +17,12 @@ def unsafe(value: str) -> bool:
     return any(c.isspace() or unicodedata.category(c).startswith("C") or c == "\ufffd" for c in value)
 
 
+def unsafe_credential(value: str) -> bool:
+    # Raw whitespace is rejected before URL parsing, but percent-encoded spaces
+    # are legitimate credential characters and must round-trip from the hub.
+    return any(unicodedata.category(c).startswith("C") or c == "\ufffd" for c in value)
+
+
 @dataclass(frozen=True)
 class ProxyEntry:
     line: int
@@ -94,7 +100,7 @@ def parse_proxy(value: str, default_type: str = "http", line: int = 0) -> ProxyE
             raise ValueError(INVALID_LINE)
         host = normalize_host(host)
         url = f"{scheme}://{host}:{int(port)}"
-        if unsafe(username) or unsafe(password) or len(username) > 512 or len(password) > 4096 or len(url) > 2048:
+        if unsafe_credential(username) or unsafe_credential(password) or len(username) > 512 or len(password) > 4096 or len(url) > 2048:
             raise ValueError(INVALID_LINE)
         return ProxyEntry(line, url, username, password)
     except (ValueError, UnicodeError):

@@ -1,23 +1,21 @@
-import importlib.util
 import json
 import os
-from pathlib import Path
 import sys
 
 import pytest
 
-spec = importlib.util.spec_from_file_location("hub_agent", Path(__file__).parents[1] / "agent.py")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from agent import agent as module
 Agent = module.Agent
 
 
 @pytest.fixture
 def agent(tmp_path):
-    instance = Agent("http://localhost:8000", "secret-token", [sys.executable, "-c", "import time; time.sleep(60)"], tmp_path)
+    instance = Agent("http://localhost:8000", "secret-token", [sys.executable, "-c", "import time; time.sleep(60)"], tmp_path,
+                     runtime_dir=tmp_path / "runtime")
     instance.config = {"number_of_workers": 1, "ai_preset_id": "test", "proxies": []}
     yield instance
     instance.stop_workers()
+    instance.backup_runner.close()
     instance.session.close()
 
 
@@ -41,7 +39,11 @@ def test_command_persist_dedup_and_refresh(agent, monkeypatch):
         if path == "/commands":
             return commands
         if path == "/config":
-            return {"number_of_workers": 0, "ai_preset_id": "new", "proxies": []}
+            return {"number_of_workers": 0, "ai_preset_id": "new", "proxies": [],
+                    "revision": 0, "local_sync_initialized": False}
+        if path == "/local-sync":
+            return {"number_of_workers": 0, "ai_preset_id": "new", "proxies": [],
+                    "revision": 1, "local_sync_initialized": True}
         return {}
 
     monkeypatch.setattr(agent, "request", request)
@@ -85,6 +87,7 @@ def test_hard_worker_limit(agent):
 
 def test_worker_environment_removes_agent_token(agent, monkeypatch):
     monkeypatch.setenv("HUB_AGENT_TOKEN", "never-pass-this")
+    monkeypatch.setenv("CAPTCHA_API_KEY", "never-pass-this-either")
     captured = {}
     real_popen = module.subprocess.Popen
 
@@ -95,15 +98,37 @@ def test_worker_environment_removes_agent_token(agent, monkeypatch):
     monkeypatch.setattr(module.subprocess, "Popen", popen)
     agent.spawn("worker-1")
     assert "HUB_AGENT_TOKEN" not in captured
+    assert "CAPTCHA_API_KEY" not in captured
     assert captured["HUB_WORKER_ID"] == agent.telemetry_id("worker-1")
+
+
+def test_worker_ipc_reports_real_tasks_and_sanitized_error(agent, monkeypatch):
+    agent.command = [sys.executable, "-c", "import os,socket; "
+                     "s=socket.socket(fileno=int(os.environ['HUB_WORKER_EVENTS_FD'])); "
+                     "s.send(b'task_completed'); s.send(b'error')"]
+    agent.spawn("worker-1")
+    agent.workers["worker-1"][0].wait(timeout=5)
+    calls = []
+
+    def request(method, path, **kwargs):
+        calls.append((path, kwargs["json"]))
+        return {"desired_state": "running"}
+
+    monkeypatch.setattr(agent, "request", request)
+    agent.heartbeat()
+    heartbeat = next(body for path, body in calls if path == "/heartbeat")
+    assert heartbeat["workers"][0]["tasks_completed"] == 1
+    assert any(body["message"] == "Worker automation hook failed; inspect local implementation"
+               for path, body in calls if path == "/errors")
 
 
 def test_state_survives_restart(agent):
     agent.completed["done"] = {"status": "completed"}
     agent.persist()
-    second = Agent(agent.hub, "token", agent.command, agent.state_dir)
+    second = Agent(agent.hub, "token", agent.command, agent.state_dir, runtime_dir=agent.local_files.directory)
     assert "done" in second.completed
     second.session.close()
+    second.backup_runner.close()
 
 
 def test_failed_worker_reports_one_sanitized_event(agent, monkeypatch):
@@ -145,3 +170,9 @@ def test_shutdown_uses_one_shared_deadline(agent, monkeypatch):
     waits = [event[2] for event in events if event[0] == "wait" and event[2] is not None]
     assert waits == [10, 2]
     assert agent.workers == {}
+
+
+def test_backup_startup_failure_does_not_abort_supervisor(agent, monkeypatch):
+    agent.stop_event.set()
+    monkeypatch.setattr(agent.backup_runner, "start", lambda: (_ for _ in ()).throw(RuntimeError("backup thread unavailable")))
+    agent.run()
