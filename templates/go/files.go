@@ -134,13 +134,19 @@ func publishConfig(dir string, c Config) error {
 		}
 		lines.WriteString(line + "\n")
 	}
-	// Deliberately omit token, captcha fields and proxy credentials from config.json.
-	local := struct {
-		Key      string `json:"ai_api_key"`
-		Workers  int    `json:"number_of_workers"`
-		Preset   string `json:"ai_preset_id"`
-		Revision int64  `json:"revision"`
-	}{c.Key, c.Workers, c.Preset, c.Revision}
+	// Preserve arbitrary local fields without ever adding them to enrollment.
+	local := map[string]json.RawMessage{}
+	err := readJSON(filepath.Join(dir, "config.json"), &local)
+	if err != nil && !os.IsNotExist(err) || local == nil {
+		return errors.New("invalid local configuration; files preserved")
+	}
+	for key, value := range map[string]any{"ai_api_key": c.Key, "number_of_workers": c.Workers, "ai_preset_id": c.Preset, "revision": c.Revision} {
+		b, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		local[key] = b
+	}
 	if err := saveJSON(filepath.Join(dir, "config.json"), local); err != nil {
 		return err
 	}

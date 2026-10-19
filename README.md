@@ -70,6 +70,8 @@ The **Backups** site tab configures schedules and cloud destinations and queues 
 
 The **Statistics** tab and Overview show **Links Sent Successfully** and **Average Messages Per Chat** from site-authenticated aggregate snapshots. Your automation defines/calculates those values; the hub never invents activity. See [statistics reporting](docs/STATISTICS.md). Logs use inline 10-row pagination and a bounded table viewport; changing a log page does not reload the dashboard. Site tabs scroll horizontally only on small screens.
 
+For per-chat completion events, explicit proxy health codes, and AI usage by nonsecret key alias, see [automation telemetry](docs/TELEMETRY.md). These are site-authenticated reporting APIs with administrator reads, not new dashboard screens. Never report chat contents or credentials; retain event IDs across retries to avoid duplicate activity.
+
 ## Connect an automation VPS
 
 For new automation projects, use the [Python, Node.js, or Go VPS templates](templates/README.md). These include local `config.json`/`proxies.txt` synchronization, lifecycle hooks, telemetry/logging, and backups without requiring captcha integration.
@@ -145,6 +147,8 @@ Commands have at-least-once delivery, not exactly-once execution. The sample per
 ```bash
 pip install -r backend/requirements-dev.txt -r agent/requirements.txt
 python -m pytest backend/tests agent/tests tests -q
+(cd templates/node && node --test)
+(cd templates/go && go test -race ./...)
 cd frontend
 npm run build
 ```
@@ -158,5 +162,7 @@ python tests/browser_smoke.py
 ```
 
 Alternatively set `BROWSER_EXECUTABLE=/path/to/chrome` to use an installed browser. The smoke test uses temporary databases and saves screenshots under `.qa/screenshots/`. To verify the built Docker image's non-root runtime and backup recovery, run `python tests/container_smoke.py` after `docker compose build hub` (Compose requires the values in `.env`).
+
+The full Python suite includes real HTTP hub/agent tests and Python, Node.js, and Go template integration with an isolated local rclone destination. Install all three runtimes and `rclone` for full coverage; missing optional tools can skip integration cases. Tests use temporary data rather than the deployed database. Run the browser smoke as a full dashboard regression, not as a replacement for API and template tests.
 
 The API is a single-administrator control plane. For teams, add an identity provider, per-user authorization/audit, and stronger gateway-level rate limiting before production use. Keep the host patched and restrict dashboard access using a VPN or gateway policy when possible while allowing trusted VPS agents through.

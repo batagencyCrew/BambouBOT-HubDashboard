@@ -1,14 +1,16 @@
 import { performTask } from './hooks.mjs';
-let config = {}; let busy = false; let tasks = 0;
+let config = {}; let workerId; let busy = false; let tasks = 0;
 const controller = new AbortController();
 let previous = process.cpuUsage(); let previousTime = performance.now();
-process.on('message', message => { if (message.type === 'config') config = message.config; });
+process.on('message', message => {
+  if (message.type === 'config') { config = message.config; workerId = message.workerId; }
+});
 process.on('disconnect', () => { controller.abort(); process.exit(0); });
 process.on('SIGTERM', () => { controller.abort(); process.exit(0); });
 setInterval(async () => {
-  if (busy) return;
+  if (busy || !workerId) return;
   busy = true;
-  try { if (await performTask({ config, signal: controller.signal })) { tasks++; process.send?.({ type: 'task' }); } }
+  try { if (await performTask({ config, signal: controller.signal, workerId })) { tasks++; process.send?.({ type: 'task' }); } }
   catch { process.send?.({ type: 'error' }); }
   finally { busy = false; }
 }, 1000);

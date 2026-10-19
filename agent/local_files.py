@@ -79,6 +79,18 @@ class LocalFiles:
             data["proxies_content"] = proxies
         return data
 
+    def existing_config(self):
+        raw = self.read_optional("config.json")
+        if raw is None:
+            return {}
+        try:
+            value = json.loads(raw)
+            if not isinstance(value, dict):
+                raise ValueError()
+            return value
+        except (ValueError, TypeError):
+            raise ValueError("Invalid local configuration; files preserved") from None
+
     def atomic_write(self, name, content):
         fd, temporary = tempfile.mkstemp(prefix=".sync-", dir=self.directory)
         try:
@@ -114,7 +126,11 @@ class LocalFiles:
             if username or password:
                 host = quote(username or "", safe="") + ":" + quote(password or "", safe="") + "@" + host
             lines.append(urlunsplit((parsed.scheme, host, "", "", "")))
-        config_text = json.dumps(safe, indent=2) + "\n"
+        # Only managed fields are authoritative. Never send these local extras
+        # back to the hub, even when the enrollment checkpoint is lost.
+        local = self.existing_config()
+        local.update(safe)
+        config_text = json.dumps(local, indent=2) + "\n"
         self.atomic_write("config.json", config_text)
         self.atomic_write("proxies.txt", "\n".join(lines) + ("\n" if lines else ""))
         # LAST: a failed enrollment/publication can never mark itself complete.

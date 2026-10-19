@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -30,6 +31,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from .proxy_import import parse_file, parse_proxy
+from . import telemetry
 
 
 TOKEN_TTL = 8 * 60 * 60
@@ -254,8 +256,17 @@ class StatisticsInput(Model):
 
 class ErrorInput(Model):
     worker_id: UUID | None = None
+    proxy_id: UUID | None = None
+    code: Literal["proxy_blocked", "proxy_auth", "proxy_timeout", "proxy_recovered", "other"] | None = None
     level: Literal["info", "warning", "error"]
     message: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("message")
+    @classmethod
+    def no_proxy_credentials(cls, value):
+        if re.search(r"(?:https?|socks5)://[^\s/]*@|\b(?:proxy-authorization|authorization)\s*:|\b(?:bbk_|sk[_-])[A-Za-z0-9_-]+|\bbearer\s+\S+", value, re.I):
+            raise ValueError("Credential-free message required")
+        return value
 
 
 def persistent_key(path: Path, generate) -> bytes:
@@ -369,6 +380,7 @@ class Storage:
                 # Historical deletes/writes cannot be inferred from current data.
                 # Fail closed for all pre-migration sites, even apparently empty ones.
                 db.execute("UPDATE configs SET admin_modified=1")
+            telemetry.migrate(db)
 
     @contextmanager
     def transaction(self):
@@ -429,6 +441,7 @@ def create_app(
         raise RuntimeError("HUB_ADMIN_PASSWORD is required and must not be blank")
     password_digest = hashlib.sha256(password.encode()).digest()
     del password
+    telemetry_settings = telemetry.Settings.from_env()
     directory = Path(data_dir or os.environ.get("HUB_DATA_DIR", "./data")).resolve()
     store = Storage(directory)
     key = encryption_key if encryption_key is not None else os.environ.get("HUB_ENCRYPTION_KEY")
@@ -459,6 +472,7 @@ def create_app(
     auth_version = hmac.new(signing_key, b"admin-password-version:" + password_digest, hashlib.sha256).hexdigest()
     app = FastAPI(title="Hub Dashboard", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
+    app.state.telemetry_settings = telemetry_settings
     app.add_middleware(BodyLimit)
     origins = [v.strip() for v in os.environ.get("HUB_CORS_ORIGINS", "").split(",") if v.strip()]
     for origin in origins:
@@ -481,6 +495,8 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def invalid_input(request, exc):
         # Pydantic's default errors include input values (including passwords).
+        if request.url.path in ("/api/agent/chats", "/api/agent/ai-usage", "/api/agent/errors"):
+            return JSONResponse(status_code=422, content={"detail": "Invalid telemetry request"})
         if request.url.path == "/api/agent/local-sync":
             logging.getLogger(__name__).warning("Invalid local sync request")
             return JSONResponse(status_code=422, content={"detail": "Invalid local sync request"})
@@ -600,6 +616,7 @@ def create_app(
         return {"access_token": signer.dumps({"role": "admin", "auth_version": auth_version, "nonce": secrets.token_hex(16)}), "token_type": "bearer", "expires_in": TOKEN_TTL}
 
     admin_dependencies = [Depends(admin)]
+    telemetry.register(app, store, agent, admin, site_row, now)
 
     @app.get("/api/overview", dependencies=admin_dependencies)
     def overview():
@@ -750,6 +767,7 @@ def create_app(
             site_row(db, str(site_id))
             if db.execute("DELETE FROM proxies WHERE site_id=? AND id=?", (str(site_id), str(proxy_id))).rowcount == 0:
                 raise HTTPException(404, "Proxy not found")
+            telemetry.remember_deleted_proxy(db, str(site_id), str(proxy_id), now(), app.state.telemetry_settings)
             admin_config_changed(db, site_id)
         return Response(status_code=204)
 
@@ -844,8 +862,10 @@ def create_app(
         error_id = uid()
         with store.transaction() as db:
             site_row(db, site_id)
-            db.execute("INSERT INTO errors VALUES(?,?,?,?,?,?)", (error_id, site_id, str(body.worker_id) if body.worker_id else None, body.level, body.message, now()))
+            telemetry.validate_proxy(db, site_id, body.proxy_id)
+            db.execute("INSERT INTO errors(id,site_id,worker_id,level,message,timestamp,proxy_id,code) VALUES(?,?,?,?,?,?,?,?)", (error_id, site_id, str(body.worker_id) if body.worker_id else None, body.level, body.message, now(), str(body.proxy_id) if body.proxy_id else None, body.code))
             db.execute("DELETE FROM errors WHERE site_id=? AND id NOT IN (SELECT id FROM errors WHERE site_id=? ORDER BY timestamp DESC,rowid DESC LIMIT ?)", (site_id, site_id, MAX_HISTORY))
+            db.execute("DELETE FROM errors WHERE rowid NOT IN (SELECT rowid FROM errors ORDER BY timestamp DESC,rowid DESC LIMIT 10000)")
         return {"id": error_id}
 
     @app.get("/api/agent/commands")

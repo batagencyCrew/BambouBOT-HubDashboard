@@ -45,7 +45,9 @@ def test_import_allowlist_and_raw_proxies(tmp_path):
 
     files.fetch(api)
     assert posts == [{"expected_revision": 0, "config": {"ai_api_key": "local-key"}, "proxies_content": raw}]
-    assert "must-not-import" not in (tmp_path / "config.json").read_text()
+    saved = json.loads((tmp_path / "config.json").read_text())
+    assert saved["token"] == "must-not-import"
+    assert saved["unknown"] == "ignored"
 
 
 def test_race_retries_once_without_local_data(tmp_path):
@@ -146,7 +148,7 @@ def test_deletions_authoritative_and_encoded_private_files(tmp_path):
     assert (tmp_path / "config.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_lost_checkpoint_no_resurrection_or_invalid_stale_file_block(tmp_path):
+def test_lost_checkpoint_invalid_json_blocks_publication_without_reimport(tmp_path):
     files = LocalFiles(tmp_path)
     (tmp_path / "config.json").write_text("invalid stale local file")
     (tmp_path / "proxies.txt").write_text("deleted proxies")
@@ -157,9 +159,11 @@ def test_lost_checkpoint_no_resurrection_or_invalid_stale_file_block(tmp_path):
             posts.append(kwargs["json"])
         return configuration(7, True)
 
-    files.fetch(api)
+    with pytest.raises(ValueError, match="files preserved"):
+        files.fetch(api)
     assert posts == [{"expected_revision": 7}]
-    assert (tmp_path / "proxies.txt").read_text() == ""
+    assert (tmp_path / "config.json").read_text() == "invalid stale local file"
+    assert (tmp_path / "proxies.txt").read_text() == "deleted proxies"
 
 
 def test_checkpoint_published_last_and_not_on_failed_publication(tmp_path, monkeypatch):
@@ -180,7 +184,7 @@ def test_checkpoint_published_last_and_not_on_failed_publication(tmp_path, monke
     assert not (tmp_path / ".sync.json").exists()
 
 
-def test_read_rejects_symlinks_and_publish_replaces_without_touching_target(tmp_path):
+def test_read_and_publish_reject_symlinks_without_touching_target(tmp_path):
     directory = tmp_path / "runtime"
     files = LocalFiles(directory)
     target = tmp_path / "outside"
@@ -188,9 +192,44 @@ def test_read_rejects_symlinks_and_publish_replaces_without_touching_target(tmp_
     (directory / "config.json").symlink_to(target)
     with pytest.raises(OSError):
         files.import_data()
-    files.publish(configuration(1, True))
+    with pytest.raises(OSError):
+        files.publish(configuration(1, True))
     assert target.read_text() == "untouched"
-    assert not (directory / "config.json").is_symlink()
+    assert (directory / "config.json").is_symlink()
+
+
+def test_local_extras_survive_refresh_and_are_never_discovered(tmp_path):
+    files = LocalFiles(tmp_path)
+    extras = {"service_password": "local-secret", "nested": {"list": [1, False, None]},
+              "large_id": 9007199254740993}
+    (tmp_path / "config.json").write_text(json.dumps({**extras, "ai_api_key": "seed", "number_of_workers": 2}))
+    (tmp_path / ".env").write_text("SECRET=env-secret\n")
+    (tmp_path / "automation-settings.json").write_text('{"secret":"other-secret"}')
+    posts = []
+
+    def api(method, path, **kwargs):
+        if method == "POST":
+            posts.append(kwargs["json"])
+        return configuration(2, method == "POST")
+
+    files.fetch(api)
+    assert posts == [{"expected_revision": 2, "config": {"ai_api_key": "seed", "number_of_workers": 2}}]
+    files.publish(configuration(3, True, number_of_workers=0))
+    saved = json.loads((tmp_path / "config.json").read_text())
+    assert {key: saved[key] for key in extras} == extras
+    assert saved["ai_api_key"] == "" and saved["number_of_workers"] == 0
+    assert "env-secret" not in json.dumps(posts) and "other-secret" not in json.dumps(posts)
+
+
+@pytest.mark.parametrize("content", ['{secret', '[]', 'null', '"secret"'])
+def test_invalid_json_after_enrollment_preserves_all_files(tmp_path, content):
+    files = LocalFiles(tmp_path)
+    files.publish(configuration(1, True))
+    (tmp_path / "config.json").write_text(content)
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    with pytest.raises(ValueError, match="files preserved"):
+        files.publish(configuration(2, True))
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
 
 
 def test_backup_config_safe_private_snapshot(tmp_path, monkeypatch):

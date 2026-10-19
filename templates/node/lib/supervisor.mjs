@@ -15,7 +15,7 @@ export class Supervisor {
     while (this.state.slots.length < config.number_of_workers) this.state.slots.push({ id: randomUUID(), tasks: 0 });
     await this.save();
     await this.reconcile();
-    for (const child of this.children.values()) child.process.send({ type: 'config', config });
+    for (const [workerId, child] of this.children) child.process.send({ type: 'config', config, workerId });
   }
   save() { return writeJSON(path.join(this.dir, 'workers.json'), this.state); }
   async reconcile() {
@@ -39,7 +39,7 @@ export class Supervisor {
       if (message.type === 'error') { record.error = true; this.report(slot.id); }
       if (message.type === 'telemetry') { record.cpu = Number.isFinite(message.cpu) ? message.cpu : 0; record.memory = Number.isFinite(message.memory) ? message.memory : 0; }
     });
-    child.send({ type: 'config', config: this.config });
+    child.send({ type: 'config', config: this.config, workerId: slot.id });
   }
   async stopChild(id, child) {
     child.stopping = true;

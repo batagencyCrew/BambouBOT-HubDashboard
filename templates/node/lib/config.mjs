@@ -33,6 +33,7 @@ export function proxyText(proxies) {
   }).join('\n') + (proxies.length ? '\n' : '');
 }
 export function localConfig(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid local config object');
   const result = {};
   for (const key of ['ai_api_key', 'ai_preset_id']) {
     if (value[key] !== undefined) { if (typeof value[key] !== 'string') throw new Error('Invalid config'); result[key] = value[key]; }
@@ -47,13 +48,20 @@ export class ConfigSync {
   constructor(api, dir) { this.api = api; this.dir = dir; }
   async refresh() {
     let config = await this.api.request('/config');
+    const configPath = path.join(this.dir, 'config.json');
+    const text = await readOptional(configPath);
+    let local = {};
+    if (text !== null) {
+      try { local = JSON.parse(text); }
+      catch { throw new Error('Invalid local configuration; files preserved'); }
+      if (!local || typeof local !== 'object' || Array.isArray(local)) throw new Error('Invalid local configuration; files preserved');
+    }
     const checkpoint = await readJSON(path.join(this.dir, '.sync.json'));
     if (!checkpoint?.initialized || !config.local_sync_initialized) {
       let payload = { expected_revision: config.revision };
       if (!checkpoint?.initialized && !config.local_sync_initialized) {
-        const local = await readJSON(path.join(this.dir, 'config.json'));
         const proxies = await readOptional(path.join(this.dir, 'proxies.txt'));
-        if (local !== null) payload.config = localConfig(local);
+        if (text !== null) payload.config = localConfig(local);
         if (proxies !== null) payload.proxies_content = validateProxy(proxies);
       }
       try { config = await this.api.post('/local-sync', payload); }
@@ -66,7 +74,7 @@ export class ConfigSync {
     if (!Number.isInteger(config.revision) || config.revision < 0 || !config.local_sync_initialized || !Array.isArray(config.proxies)) throw new Error('Invalid hub config');
     const selected = localConfig(config);
     const proxies = proxyText(config.proxies);
-    await writeJSON(path.join(this.dir, 'config.json'), { ...selected, revision: config.revision });
+    await writeJSON(configPath, { ...local, ai_api_key: '', ai_preset_id: '', ...selected, revision: config.revision });
     await atomicWrite(path.join(this.dir, 'proxies.txt'), proxies);
     await writeJSON(path.join(this.dir, '.sync.json'), { initialized: true, revision: config.revision });
     return { ...selected, proxies: config.proxies, revision: config.revision };

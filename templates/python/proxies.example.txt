@@ -1,0 +1,4 @@
+# Optional: one proxy URL per line. Blank lines and comments are ignored.
+# Supported schemes: http, https, socks5. An explicit port is required.
+# Format: scheme://host:port or scheme://username:password@host:port
+# Percent-encode reserved characters in credentials; bracket IPv6 hosts.

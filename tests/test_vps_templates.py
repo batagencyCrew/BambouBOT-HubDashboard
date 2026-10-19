@@ -63,7 +63,8 @@ def test_template_enrollment_commands_file_deletions_and_backups(language, tmp_p
     (code / "automation.txt").write_text("Only a harmless integration fixture\n")
     runtime = tmp_path / "runtime"
     runtime.mkdir(mode=0o700)
-    (runtime / "config.json").write_text(json.dumps({"ai_api_key": "fixture-ai-key", "number_of_workers": 1, "ai_preset_id": "fixture-preset"}))
+    (runtime / "config.json").write_text(json.dumps({"ai_api_key": "fixture-ai-key", "number_of_workers": 1,
+                                                  "ai_preset_id": "fixture-preset", "automation_secret": "fixture-only"}))
     (runtime / "proxies.txt").write_text("socks5://local-user:local-pass@proxy.example.com:1080\n")
     env = dict(os.environ, HUB_ADMIN_PASSWORD="template-parity-password-only", HUB_DATA_DIR=str(tmp_path / "hub"),
                HUB_RCLONE_CONFIG=str(cloud_config), HUB_BACKUP_WORKER_ENABLED="true")
@@ -100,8 +101,18 @@ def test_template_enrollment_commands_file_deletions_and_backups(language, tmp_p
                 return config["has_ai_api_key"] and config["ai_preset_id"] == "fixture-preset" and len(api("GET", base + "/proxies")) == 1
 
             eventually(local_enrolled)
+            site_headers = {"Authorization": "Bearer " + created["agent_token"]}
+
+            def assert_local_secret_only():
+                local = json.loads((runtime / "config.json").read_text())
+                assert local["automation_secret"] == "fixture-only"
+                response = requests.get(origin + "/api/agent/config", headers=site_headers, timeout=5)
+                response.raise_for_status()
+                assert "automation_secret" not in response.text and "fixture-only" not in response.text
+
             eventually(lambda: api("GET", base)["status"] == "healthy")
             eventually(lambda: (runtime / ".sync.json").exists())
+            assert_local_secret_only()
             eventually(lambda: (runtime / "backup-config.json").exists())
             for filename in ("config.json", "proxies.txt", ".sync.json", "backup-config.json"):
                 assert (runtime / filename).stat().st_mode & 0o777 == 0o600
@@ -134,6 +145,7 @@ def test_template_enrollment_commands_file_deletions_and_backups(language, tmp_p
             api("PUT", base + "/config", json={"number_of_workers": 1, "ai_preset_id": "dashboard-preset", "ai_api_key": ""})
             lifecycle("restart")
             eventually(lambda: json.loads((runtime / "config.json").read_text())["ai_api_key"] == "")
+            assert_local_secret_only()
 
             def scheduled_completed():
                 return next((item for item in api("GET", base + "/backups")["backups"]

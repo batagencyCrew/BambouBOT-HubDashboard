@@ -34,7 +34,7 @@ jobs:
       - run: python -m pytest backend/tests agent/tests tests -q
       - run: node --test
         working-directory: templates/node
-      - run: go test ./...
+      - run: go test -race ./...
         working-directory: templates/go
       - run: npm ci
         working-directory: frontend

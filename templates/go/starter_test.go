@@ -156,7 +156,7 @@ func TestProxyEncodingAndPublication(t *testing.T) {
 }
 
 func TestEnrollmentRevisionRaceAndAuthoritativeRefresh(t *testing.T) {
-	c := Config{Workers: 1, Revision: 2, Key: "hub-key", Initialized: true}
+	c := Config{Workers: 1, Revision: 2, Key: "hub-key", Initialized: false}
 	posts, gets := 0, 0
 	a := apiTest(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -179,6 +179,7 @@ func TestEnrollmentRevisionRaceAndAuthoritativeRefresh(t *testing.T) {
 				t.Errorf("stale seed retry: %#v", body)
 			}
 			c.Revision = 4
+			c.Initialized = true
 			json.NewEncoder(w).Encode(c)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)

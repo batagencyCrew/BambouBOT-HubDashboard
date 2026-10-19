@@ -43,20 +43,70 @@ On first enrollment, local configuration and proxies are imported **only if the 
 }
 ```
 
-After enrollment, the hub is authoritative. Agents publish these owner-only local files:
+All three starters ship `.env.example`, `config.example.json`, and comments-only
+`proxies.example.txt`. Actual secret files are intentionally absent. From your
+selected language directory, create actual files without overwriting local work:
+
+```sh
+umask 077
+cp --no-clobber .env.example .env
+mkdir -p runtime
+cp --no-clobber config.example.json runtime/config.json
+cp --no-clobber proxies.example.txt runtime/proxies.txt
+chmod 600 .env runtime/config.json runtime/proxies.txt
+```
+
+Replace the `HUB_AGENT_TOKEN` placeholder locally. Commands assume GNU `cp` on
+Linux; match the copy destination to `HUB_RUNTIME_DIR`. For an existing script
+root use `config.json` / `proxies.txt` there and `HUB_RUNTIME_DIR=.` instead.
+
+Required environment: **`HUB_URL`, `HUB_AGENT_TOKEN`**. Optional names/defaults
+are listed in each language README. Python loads `.env` beside `main.py` using
+python-dotenv without overriding existing environment variables. Node loads it
+only with `node --env-file=.env`; Go does not load it (use shell/service exports).
+
+No JSON field is required. Optional first-enrollment upload fields are exactly
+`ai_api_key` (string), `number_of_workers` (integer 0–100, not boolean), and
+`ai_preset_id` (nonempty string; sample `default`). An empty AI key and zero workers are supported. `revision`
+is hub-owned, not an enrollment field. Proxy input is optional; the comments-only
+sample imports an empty pool.
+
+After enrollment, the hub is authoritative for managed fields. Agents publish these owner-only local files:
 
 | File | Contents |
 | --- | --- |
-| `config.json` | AI API key, worker count, preset ID, hub revision |
+| `config.json` | AI API key, worker count, preset ID, hub revision; existing extra local keys preserved |
 | `proxies.txt` | Complete proxy pool, including URL-encoded credentials if needed |
 | `backup-config.json` | Latest backup schedule and destination IDs, never cloud credentials |
 | `.sync.json` | Enrollment/revision checkpoint, never a hub token |
 
 Dashboard saves update the files on the next config poll (normally within 30 seconds). Start/restart reloads immediately. Proxy deletions remove corresponding lines; deleting the last proxy produces an empty `proxies.txt`. Clearing the AI key writes an empty string. Per-file updates use private temporary files and atomic replacement; publication is not a multi-file filesystem transaction.
 
-These filenames are **managed by the agent**. Keep unrelated business settings in a separate file such as `automation-settings.json`; extra fields in an existing managed `config.json` are not preserved when the hub mirror is published. Take a private copy before pointing the agent at existing files.
+The managed JSON keys are `ai_api_key`, `number_of_workers`, `ai_preset_id`, and
+`revision`. Other keys, including nested settings and arbitrary secrets, are
+preserved locally, **not uploaded through configuration sync or exposed in the
+dashboard**. Invalid/non-object JSON blocks publication without replacing runtime
+files; repair it locally. Prefer a separate `automation-settings.json` and local
+`.env` for unrelated settings/secrets. There is no automatic secret inventory,
+file discovery, arbitrary-key upload, or dynamic dashboard configuration.
+AI usage reporting key identifiers should be **nonsecret aliases**, never raw
+credentials; these starters add no AI-usage config fields or automatic reporting.
 
-**Local edits are not continuously pushed back.** After enrollment they are overwritten by the next hub refresh. This prevents stale VPS files, restores, or lost checkpoints from resurrecting proxies deleted in the dashboard. To intentionally add a changed local proxy pool later, use the dashboard's file import. Site deletion revokes authentication but does not remotely erase local code or files; an operator must remove them on the VPS if desired.
+This is a configuration-sync guarantee, **not a backup exclusion**. Optional
+whole-codebase backups may include config, `automation-settings.json`, and `.env`
+inside the selected source (see language-specific exclusions). Keep secret env
+files outside the backup source or encrypt backups when needed. Explicit file
+uploads also send the file you select.
+
+Preservation does **not** automatically wire extras into worker config/IPC or
+hub DTOs. Developers must load local settings explicitly inside worker hooks or
+approve specific environment variables locally. Python inherits the supervisor
+environment minus hub credentials; Node child environments allowlist `PATH` and
+`NODE_ENV` plus explicit worker plumbing (no automatic extra `.env` secrets);
+Go hooks run in the same process. Never forward all `.env` values or
+`HUB_AGENT_TOKEN` to workers. See [opt-in telemetry](TELEMETRY.md).
+
+**Local edits are not continuously pushed back.** After enrollment edits to managed fields are overwritten by the next hub refresh; extra keys remain local. This prevents stale VPS files, restores, or lost checkpoints from resurrecting proxies deleted in the dashboard. To intentionally add a changed local proxy pool later, use the dashboard's file import. Site deletion revokes authentication but does not remotely erase local code or files; an operator must remove them on the VPS if desired.
 
 Sites that existed before the local-sync upgrade are conservatively treated as already configured, because the hub cannot prove their settings were never edited. Their existing dashboard state wins; use dashboard proxy-file import for an intentional initial merge.
 

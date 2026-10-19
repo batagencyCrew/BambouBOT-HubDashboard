@@ -45,9 +45,13 @@ func (a *Agent) syncConfig(ctx context.Context) error {
 		return errors.New("invalid local sync checkpoint; refusing to reimport")
 	}
 	if !mark.Initialized {
-		seed, err := localSeed(a.runtimeDir, a.seedConfig, a.seedProxies)
-		if err != nil {
-			return err
+		seed := map[string]any{}
+		if !c.Initialized {
+			var err error
+			seed, err = localSeed(a.runtimeDir, a.seedConfig, a.seedProxies)
+			if err != nil {
+				return err
+			}
 		}
 		seed["expected_revision"] = c.Revision
 		err = a.api.json(ctx, "POST", "/local-sync", seed, &c)

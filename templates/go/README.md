@@ -4,8 +4,16 @@ Runnable Linux starter, standard library only, Go 1.24+ (verified with Go 1.24.6
 No captcha integration, target-site automation, cloud credentials, or remote shell.
 
 ```sh
-export HUB_URL=https://your-hub.example
-export HUB_AGENT_TOKEN='your-site-agent-token'
+umask 077
+cp --no-clobber .env.example .env
+mkdir -p runtime
+cp --no-clobber config.example.json runtime/config.json
+cp --no-clobber proxies.example.txt runtime/proxies.txt
+chmod 600 .env runtime/config.json runtime/proxies.txt
+# Edit .env locally (replace HUB_AGENT_TOKEN placeholder), then in a trusted shell:
+set -a
+. ./.env
+set +a
 go run .
 # Or build/run without arguments:
 go build -o /tmp/bambou-agent .
@@ -18,6 +26,27 @@ Only HTTPS origins are accepted, except loopback HTTP for development. TLS
 certificate verification stays enabled, redirects and environment HTTP proxies
 are disabled, requests have deadlines. Responses/errors never get logged verbatim.
 Use one process per site/runtime/state directory (no cross-process lock).
+
+Actual `.env`/credential files are intentionally absent. GNU `cp --no-clobber`
+does not overwrite existing content. Sourcing `.env` executes shell syntax: only
+source your own trusted file. The shown shell exports its values (overriding
+existing ones); Go itself never parses `.env`. A service manager may load an
+external environment file instead. Relative paths use the working directory.
+
+| Environment name | Required/default |
+| --- | --- |
+| `HUB_URL` | Required HTTPS origin |
+| `HUB_AGENT_TOKEN` | Required site token |
+| `HUB_RUNTIME_DIR` | Optional `./runtime` |
+| `HUB_STATE_DIR` | Optional `state/` under runtime |
+| `HUB_LOCAL_CONFIG` | Optional `./localconfig.json`, only if runtime config missing |
+| `HUB_LOCAL_PROXIES` | Optional `./localproxies.txt`, only if runtime proxies missing |
+| `HUB_BACKUP_DIR` | Optional; unset disables archive source |
+| `HUB_BACKUP_TEMP_DIR` | Optional; existing OS temp directory, outside source |
+| `HUB_BACKUP_MAX_BYTES` | Optional positive integer, 1073741824 |
+
+These are explicit paths, not automatic directory/file discovery. Copy examples
+to the runtime you select; fallback seed files are never overwritten.
 
 ## Local files and enrollment
 
@@ -38,16 +67,38 @@ Use one process per site/runtime/state directory (no cross-process lock).
   A 409 triggers one fresh GET and a revision-only retry, never a stale reimport.
   Missing local checkpoints cannot resurrect deleted hub proxies: server-side
   enrollment/admin-modification guards are authoritative.
-- After enrollment the hub wins, including empty keys and deleted proxies. Each
-  startup reloads immediately; config polls every 30s. `config.json` contains only
-  AI key, worker count, preset and revision; `proxies.txt` contains canonical URLs.
+- After enrollment the hub wins for managed fields, including empty keys and deleted proxies. Each
+  startup reloads immediately; config polls every 30s. `config.json` contains
+  AI key, worker count, preset and revision plus preserved extra local fields;
+  `proxies.txt` contains canonical URLs.
   Private temp files are fsynced and renamed, then `.sync.json` is written last.
   Publication is **per-file atomic**, not a multi-file transaction: consumers
-  should check/re-read config revision after reload. Manual edits are overwritten.
+  should check/re-read config revision after reload. Manual managed-field edits are overwritten.
 - Every backup-config GET also publishes the latest safe settings in
   `backup-config.json` (no cloud credentials). Poll cadence is 30s when backup
   work is idle. Dashboard site deletion revokes access, but never deletes local
   code or private files. Local operator cleanup is explicit.
+
+No seed file or JSON key is required. First-enrollment upload allowlist:
+`ai_api_key` (string), `number_of_workers` (integer 0–100, not boolean),
+`ai_preset_id` (nonempty string; sample `default`). Empty AI keys and zero workers are valid. `revision`
+is hub-owned. Unknown keys in runtime `config.json` are preserved locally,
+including nested settings/secrets, but never uploaded through configuration sync
+or exposed in the dashboard. Invalid/non-object JSON blocks publication without
+replacing runtime files, even after enrollment. Fallback `localconfig.json`
+remains untouched; its extra keys are not copied into runtime or uploaded.
+Prefer separate `automation-settings.json` and local `.env` for extra settings.
+There is no automatic secret inventory or dynamic dashboard configuration.
+AI usage key identifiers should be nonsecret aliases, not credentials; no AI-usage
+config fields or automatic reporting are added. Optional backups may include
+these files inside the source; keep secret env files outside it or encrypt
+backups when needed. Configuration-sync privacy is not a backup exclusion.
+
+Preservation does not wire extras into the typed hub `Config`. Hooks must load
+explicitly selected local settings themselves. Go hooks run in the supervisor
+process and share its environment: do not expose its token or indiscriminately
+forward environment secrets to subprocesses. See the
+[opt-in telemetry helpers](../TELEMETRY.md).
 
 ## Workers and integration hooks
 
