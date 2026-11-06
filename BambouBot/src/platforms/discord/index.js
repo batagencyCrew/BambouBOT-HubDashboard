@@ -3,7 +3,19 @@
 const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js');
 const { DiscordBot } = require('./bot');
 const { commandsJson } = require('./commands');
-const { errorText } = require('../../core/errors');
+const { errorText, redact } = require('../../core/errors');
+const { fit, LIMITS } = require('../../core/hubformat');
+
+/**
+ * Send a hub alert to `guildId:channelId`. The channel must belong to that guild,
+ * so a hub misconfiguration cannot make the bot post into an unrelated server.
+ */
+async function sendAlertTo(client, { guildId, channelId, text }, secrets = []) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || typeof channel.send !== 'function') throw new Error(`Discord channel ${channelId} is not a text channel the bot can see`);
+  if (channel.guildId && String(channel.guildId) !== String(guildId)) throw new Error(`Discord channel ${channelId} is not in guild ${guildId}`);
+  await channel.send({ content: fit(redact(text, secrets), LIMITS.discord), allowedMentions: { parse: [] } });
+}
 
 /**
  * Discord platform factory: { name, start({ signal }), stop() }.
@@ -53,7 +65,12 @@ function createDiscordPlatform({ config, services, access, audit, logger = conso
     async stop() {
       await client.destroy();
     },
+    /** Used by the hub alert poller (services/hub-alerts.js). */
+    sendAlert: (target) => {
+      if (!client.isReady()) throw new Error('Discord is not connected');
+      return sendAlertTo(client, target, allSecrets());
+    },
   };
 }
 
-module.exports = { createDiscordPlatform };
+module.exports = { createDiscordPlatform, sendAlertTo };

@@ -76,7 +76,7 @@ const textInputs = (modal) => modal.components.map((row) => row.components[0]);
 
 test('slash commands are built from the shared field specs', () => {
   const json = Object.fromEntries(commandsJson().map((c) => [c.name, c]));
-  assert.deepEqual(Object.keys(json), ['preset', 'key', 'access', 'gms']);
+  assert.deepEqual(Object.keys(json), ['preset', 'key', 'access', 'gms', 'hub']);
   assert.equal(json.gms.options.length, 8);
   const create = json.key.options.find((o) => o.name === 'create');
   const rpm = create.options.find((o) => o.name === 'rpm');

@@ -23,6 +23,7 @@ const { PRESET_FIELDS, GMS_FIELDS, fieldByKey } = require('../../core/fields');
 const { parsePermissions } = require('../../services/access');
 const { linkId, periodValue } = require('../../services/gms');
 const render = require('../../services/render');
+const { DiscordHub } = require('./hub');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const COLOR = 0x785eff; // GetMySocial brand purple
@@ -44,10 +45,11 @@ class DiscordBot {
     this.extraSecrets = secrets;
     this.auditLog = audit || require('../../core/audit').createAudit({ logger, secrets: () => this.secrets });
     this.sessions = new SessionStore({ ttlMs: sessionTtlMs, now, tokenBytes: 5 });
+    this.hub = new DiscordHub(this);
   }
 
   get secrets() {
-    return [this.services.studio.loginKey, ...this.extraSecrets()].filter(Boolean);
+    return [this.services.studio.loginKey, this.services.hub?.client?.token, ...this.extraSecrets()].filter(Boolean);
   }
 
   audit(interaction, action, detail = '') {
@@ -136,6 +138,9 @@ class DiscordBot {
         case 'gms':
           this.authorize(interaction, 'gms');
           return await this.handleGms(interaction);
+        case 'hub':
+          // Hub permissions come from the linked hub user, not access.json.
+          return await this.hub.handle(interaction);
         default:
           return undefined;
       }
@@ -150,7 +155,9 @@ class DiscordBot {
       const query = String(focused.value || '').toLowerCase();
       const userId = interaction.user.id;
       let choices = [];
-      if (['source', 'preset'].includes(focused.name) && this.access.has(userId, 'presets')) {
+      if (interaction.commandName === 'hub') {
+        if (focused.name === 'site') choices = await this.hub.autocomplete(interaction, query);
+      } else if (['source', 'preset'].includes(focused.name) && this.access.has(userId, 'presets')) {
         choices = (await this.services.presets.list())
           .filter((p) => !query || String(p.id).toLowerCase().includes(query) || String(p.name || '').toLowerCase().includes(query))
           .map((p) => ({ name: `${p.id} — ${p.name}${p.archivedAt ? ' (archived)' : ''}`.slice(0, 100), value: String(p.id) }));
@@ -410,6 +417,7 @@ class DiscordBot {
     }
     if (prefix === 'kdel') return this.confirmKeyDelete(interaction);
     if (prefix === 'gdel') return this.confirmGmsDelete(interaction);
+    if (this.hub.handles(prefix)) return this.hub.button(interaction);
     return undefined;
   }
 

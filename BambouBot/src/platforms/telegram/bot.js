@@ -17,6 +17,8 @@ const { PERMISSIONS } = require('../../core/access');
 const { parsePermissions } = require('../../services/access');
 const { linkId, periodValue } = require('../../services/gms');
 const render = require('../../services/render');
+const { fit, LIMITS } = require('../../core/hubformat');
+const { TelegramHub } = require('./hub');
 
 const COMMANDS = [
   { command: 'start', description: 'Open the BambouAI menu' },
@@ -26,6 +28,7 @@ const COMMANDS = [
   { command: 'key', description: 'Manage assistant API keys' },
   { command: 'access', description: 'Owner: approve users and permissions' },
   { command: 'gms', description: 'GetMySocial links and click statistics' },
+  { command: 'hub', description: 'Bambou Hub: sites, logs, alerts, config' },
   { command: 'skip', description: 'Keep the current value in a form' },
   { command: 'back', description: 'Go back one form field' },
   { command: 'cancel', description: 'Cancel your current form' },
@@ -74,10 +77,11 @@ class TelegramBot {
     this.sessions = new SessionStore({ ttlMs: sessionTtlMs, now });
     this.activeForms = new Map();
     this.queues = new Map();
+    this.hub = new TelegramHub(this);
   }
 
   get secrets() {
-    return [this.telegram.token, this.services.studio.loginKey, ...this.extraSecrets()].filter(Boolean);
+    return [this.telegram.token, this.services.studio.loginKey, this.services.hub?.client?.token, ...this.extraSecrets()].filter(Boolean);
   }
 
   audit(ctx, action, detail = '') {
@@ -206,6 +210,10 @@ class TelegramBot {
         '/gms stats [link] [period=week]', `Periods: ${Object.keys(this.services.gms.periods).join(', ')}`, '/gms refresh');
       actions.push({ label: 'GetMySocial links', command: '/gms list' }, { label: 'Click stats', command: '/gms stats' });
     }
+    if (this.services.hub) {
+      lines.push('', 'Bambou Hub (permissions come from your linked hub account):', '/hub — every hub command', '/hub sites · /hub alerts · /hub link <code>');
+      actions.push({ label: 'Hub sites', command: '/hub sites' });
+    }
     if (this.access.isOwner(ctx.userId)) {
       lines.push('', 'Owner access:', `/access add <telegram_user_id> <${PERMISSIONS.join('+')}> [label="..."]`, '/access remove <telegram_user_id>', '/access list',
         `Any combination of ${PERMISSIONS.join(', ')} is accepted; all grants every permission.`);
@@ -237,6 +245,10 @@ class TelegramBot {
       // Commands addressed to another bot must not become a form answer.
       if (ctx.message.text.startsWith('/')) return;
       const state = this.activeForm(ctx);
+      if (state?.type === 'confirmation' && state.operation === 'hub' && !this.sessions.expired(state) &&
+        (ctx.message.reply_to_message?.message_id === state.messageId || ctx.chat.type === 'private')) {
+        return await this.hub.takeReply(ctx, state, ctx.message.text);
+      }
       if (!state || state.type !== 'form' || state.phase !== 'collect') return;
       if (ctx.message.reply_to_message?.message_id !== state.messageId) return;
       this.authorize(ctx, state.permission);
@@ -263,6 +275,8 @@ class TelegramBot {
     if (name === 'key') { this.authorize(ctx, 'keys'); return this.keyCommand(ctx, args); }
     if (name === 'access') { this.authorize(ctx, null, true); return this.accessCommand(ctx, args); }
     if (name === 'gms') { this.authorize(ctx, 'gms'); return this.gmsCommand(ctx, args); }
+    // Hub permissions come from the linked hub user (the hub checks them), not access.json.
+    if (name === 'hub') return this.hub.command(ctx, args);
     return this.reply(ctx, 'Unknown command. Use /help.');
   }
 
@@ -690,6 +704,7 @@ class TelegramBot {
       await this.clearButtons(state);
       return this.command(ctx, parseCommand(entry.command, this.username));
     }
+    if (await this.hub.callback(ctx, state, action)) return;
     if (state.type === 'presetList' || state.type === 'keyList') {
       const presets = state.type === 'presetList';
       if (/^p\d+$/.test(action) || action === 'refresh') {
@@ -743,6 +758,15 @@ class TelegramBot {
     const updated = await this.services.keys.update(state.keyId, patch);
     this.audit(ctx, 'key.edit.execute', `id=${state.keyId} fields=${Object.keys(patch).join(',')}`);
     return this.reply(ctx, `✅ ${render.keyLine(updated)}`);
+  }
+
+  /** Hub alert delivery: plain text into `chatId` (optionally a forum topic). */
+  async sendAlert({ chatId, threadId, text }) {
+    if (!/^-?\d{1,20}$/.test(String(chatId))) throw new Error(`Telegram chat id ${chatId} is not numeric`);
+    await this.telegram.sendMessage(chatId, fit(redact(text, this.secrets), LIMITS.telegram), {
+      ...(threadId ? { message_thread_id: Number(threadId) } : {}),
+      link_preview_options: { is_disabled: true },
+    });
   }
 
   /* -------------------------------- startup ------------------------------ */

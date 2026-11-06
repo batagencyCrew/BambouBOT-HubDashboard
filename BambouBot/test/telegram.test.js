@@ -232,7 +232,7 @@ const publicHasSecret = (state, chatId = '-100') => state.sent.some((message) =>
 
 test('importing the Telegram adapter does not load .env, log in or start either bot', () => {
   assert.deepEqual({ ...process.env }, environmentBeforeImport);
-  assert.equal(COMMANDS.length, 10);
+  assert.equal(COMMANDS.length, 11);
   assert.ok(COMMANDS.every((command) => /^[a-z_]{1,32}$/.test(command.command)));
 });
 

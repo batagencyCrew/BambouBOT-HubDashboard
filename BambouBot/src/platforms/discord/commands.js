@@ -94,6 +94,64 @@ const gmsCommand = new SlashCommandBuilder()
       .addChoices(...Object.keys(PERIODS).map((value) => ({ name: PERIOD_NAMES[value] || value, value })))))
   .addSubcommand((s) => s.setName('refresh').setDescription('Clear the local cache (re-fetch links)'));
 
-const COMMANDS = [presetCommand, keyCommand, accessCommand, gmsCommand];
 
-module.exports = { presetCommand, keyCommand, accessCommand, gmsCommand, COMMANDS, commandsJson: () => COMMANDS.map((c) => c.toJSON()) };
+/* ---------------------------------- hub ----------------------------------- */
+
+/**
+ * `/hub` has a single option list in Discord (max 25), so list-only commands
+ * (rules) live here too. Each command maps to src/services/hubcommands.js.
+ */
+const siteOption = (o, required = true) => o.setName('site').setDescription('Site name or slug').setRequired(required).setMaxLength(100).setAutocomplete(true);
+const hubPeriod = (o, def) => o.setName('period').setDescription(`Time range (default ${def})`).addChoices(
+  ...['1h', '24h', '7d', '30d', '90d', '365d'].map((value) => ({ name: value, value })));
+const hubLevel = (o) => o.setName('level').setDescription('Minimum level (default info)').addChoices(
+  ...['debug', 'info', 'notice', 'warning', 'error', 'critical'].map((value) => ({ name: value, value })));
+const hubLimit = (o) => o.setName('limit').setDescription('Lines (1-50, default 15)').setMinValue(1).setMaxValue(50);
+
+const hubCommand = new SlashCommandBuilder()
+  .setName('hub').setDescription('Bambou Hub: sites, health, logs, costs, alerts, config files')
+  .addSubcommand((s) => s.setName('sites').setDescription('Every site with health and worker counts'))
+  .addSubcommand((s) => s.setName('info').setDescription('One site: health, workers, host').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('stats').setDescription('Overview, or one site’s logs/metrics/costs')
+    .addStringOption((o) => siteOption(o, false)).addStringOption((o) => hubPeriod(o, '24h')))
+  .addSubcommand((s) => s.setName('start').setDescription('Start a site').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('stop').setDescription('Stop a site (asks for confirmation)').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('restart').setDescription('Restart a site (asks for confirmation)').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('pause').setDescription('Pause the workers').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('resume').setDescription('Resume the workers').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('workers').setDescription('Workers and their state').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('logs').setDescription('Recent logs (paginated)')
+    .addStringOption((o) => siteOption(o)).addStringOption((o) => hubLevel(o)).addIntegerOption((o) => hubLimit(o)))
+  .addSubcommand((s) => s.setName('errors').setDescription('Recent errors (paginated)')
+    .addStringOption((o) => siteOption(o)).addIntegerOption((o) => hubLimit(o)))
+  .addSubcommand((s) => s.setName('costs').setDescription('Spending for all sites or one site')
+    .addStringOption((o) => siteOption(o, false)).addStringOption((o) => hubPeriod(o, '30d')))
+  .addSubcommand((s) => s.setName('balances').setDescription('Provider balances (low ones flagged)')
+    .addStringOption((o) => siteOption(o, false)))
+  .addSubcommand((s) => s.setName('proxies').setDescription('Proxy health for a site')
+    .addStringOption((o) => siteOption(o)).addStringOption((o) => hubPeriod(o, '24h')))
+  .addSubcommand((s) => s.setName('files').setDescription('Managed config files of a site').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('show').setDescription('Show a config file (secrets masked)')
+    .addStringOption((o) => siteOption(o))
+    .addStringOption((o) => o.setName('path').setDescription('config.json, .env, proxies.txt…').setRequired(true).setMaxLength(300)))
+  .addSubcommand((s) => s.setName('set').setDescription('Set one config value (asks for confirmation)')
+    .addStringOption((o) => siteOption(o))
+    .addStringOption((o) => o.setName('path').setDescription('File, e.g. .env or config.json').setRequired(true).setMaxLength(300))
+    .addStringOption((o) => o.setName('key').setDescription('Env variable or dotted JSON path').setRequired(true).setMaxLength(200))
+    .addStringOption((o) => o.setName('value').setDescription('New value (leave empty to clear)').setMaxLength(1000)))
+  .addSubcommand((s) => s.setName('alerts').setDescription('Active alerts, with ack buttons'))
+  .addSubcommand((s) => s.setName('ack').setDescription('Acknowledge an alert')
+    .addStringOption((o) => o.setName('id').setDescription('Alert id (the 8 characters shown)').setRequired(true).setMaxLength(36)))
+  .addSubcommand((s) => s.setName('mute').setDescription('Mute an alert')
+    .addStringOption((o) => o.setName('id').setDescription('Alert id').setRequired(true).setMaxLength(36))
+    .addIntegerOption((o) => o.setName('minutes').setDescription('Minutes (1-43200, default 60)').setMinValue(1).setMaxValue(43_200)))
+  .addSubcommand((s) => s.setName('backup').setDescription('Request a backup now').addStringOption((o) => siteOption(o)))
+  .addSubcommand((s) => s.setName('link').setDescription('Link this Discord account to a hub user (code from the dashboard)')
+    .addStringOption((o) => o.setName('code').setDescription('Link code from the hub dashboard').setRequired(true).setMaxLength(40)))
+  .addSubcommand((s) => s.setName('unlink').setDescription('Unlink this Discord account from the hub'))
+  .addSubcommand((s) => s.setName('rules').setDescription('Alert rules of the hub'))
+  .addSubcommand((s) => s.setName('whoami').setDescription('Which hub user this Discord account is linked to'));
+
+const COMMANDS = [presetCommand, keyCommand, accessCommand, gmsCommand, hubCommand];
+
+module.exports = { presetCommand, keyCommand, accessCommand, gmsCommand, hubCommand, COMMANDS, commandsJson: () => COMMANDS.map((c) => c.toJSON()) };

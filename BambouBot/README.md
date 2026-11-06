@@ -77,6 +77,57 @@ To add a feature:
 
 Platform adapters never call the BambouAI or GetMySocial clients directly.
 
+## Hub integration
+
+The optional `hub` module controls Bambou Hub sites from Discord and Telegram and
+delivers hub alerts. It is off unless both variables are set:
+
+| Variable | Meaning |
+| --- | --- |
+| `HUB_URL` | hub base URL, e.g. `https://hub.example.com` |
+| `HUB_BOT_TOKEN` | bot service token `hbt_…` (hub: `POST /api/service-tokens/bot`, needs `bots:manage`) |
+| `HUB_ALERTS` | `false` turns alert delivery off (default `true`) |
+| `HUB_ALERT_INTERVAL_MS` / `HUB_TIMEOUT_MS` | poll interval (default 20000) / request timeout (default 15000) |
+
+**Permissions and linking.** `access.json` still governs `/preset`, `/key`, `/gms` and
+`/access`. Hub commands use the permissions of the **linked hub user**: the bot sends
+its token plus `X-Bot-User: <platform>:<id>`, and the hub checks every call itself
+(a 403 is shown as "Your hub account lacks the `<permission>` permission").
+To link, generate a code in the dashboard (Profile → link a chat account, valid 10
+minutes, single use) and send `/hub link <code>`; `/hub unlink` removes the link.
+An unlinked user gets a one-line instruction instead of hub data.
+
+**Commands** (Discord `/hub <sub> option:value`; Telegram `/hub <sub> args`, positional
+or `key=value`, values with spaces quoted):
+
+```
+sites                         info site            stats [site] [period]
+start|pause|resume site       stop|restart site    (confirmation)
+workers site                  logs site [level] [limit]     errors site [limit]
+costs [site] [period]         balances [site]      proxies site
+files site                    show site path       set site path key value (confirmation)
+alerts                        ack id               mute id [minutes]
+backup site                   link code            unlink
+rules                         whoami               (/hub alone on Telegram: menu)
+```
+
+`stop`, `restart` and `set` show the site's live health and worker counts and wait for
+a confirmation (button on Discord; button or reply `yes` on Telegram). Replies fit
+Discord's 2000 / Telegram's 4096 characters: lists are truncated with a note, logs page
+with an **Older** button (keyset, no gaps), alerts page by 10 with **Ack** buttons, and the
+file list has **Show** buttons. File contents are always masked by the hub.
+
+**Alert delivery.** `src/services/hub-alerts.js` polls `GET /api/bot/deliveries`,
+sends each alert to the channel the hub chose — Discord `guildId:channelId`, Telegram
+`chatId` (or `chatId:topicId`) — and reports `POST /api/bot/deliveries/{id}` with
+`{ok, error}`. A hub outage is logged and retried with exponential backoff (max 5 min);
+it never stops the bots. A channel on a platform this process does not run is
+reported as failed so the hub can retry or show it.
+
+Code: `src/clients/hub.js` (HTTP + error mapping), `src/services/hub.js` (API calls,
+validation), `src/services/hubcommands.js` (shared command layer),
+`src/core/hubformat.js` (text), `src/platforms/{discord,telegram}/hub.js` (UX).
+
 ## Behaviour changes compared with BambouBotAI
 
 Where the two old bots behaved differently, both now use the safer behaviour:
@@ -138,7 +189,7 @@ The old access files are never modified.
 
 ## Tests
 
-`npm test` runs about 80 offline tests against local HTTP mocks:
+`npm test` runs about 100 offline tests against local HTTP mocks:
 
 - `core.test.js`: preset builder, validators, formatting, sessions, cache, redaction, config
 - `access.test.js`: platform isolation, corrupt-file refusal, owner override, migration script
@@ -147,6 +198,8 @@ The old access files are never modified.
 - `telegram.test.js`: the full original Telegram suite, ported
 - `discord.test.js`: the router, preset modal flow, key delivery and revoke, access, GMS, splitting
 - `app.test.js`: one login shared by both platforms, failure isolation, `--only`, CLI errors
+- `hub.test.js`: hub client headers/error mapping, commands (403, unlinked, truncation, pagination),
+  Discord/Telegram confirmations and buttons, linking, alert poller (delivery, failures, hub down)
 
 `npm run smoke` is a live, read-only check against BambouAI.
 `npm run smoke -- --write` creates and removes a test preset and key.

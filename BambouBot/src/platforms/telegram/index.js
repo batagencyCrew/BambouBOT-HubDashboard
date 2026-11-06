@@ -16,6 +16,8 @@ function createTelegramPlatform({ config, services, access, audit, logger = cons
     bot,
     start: ({ signal } = {}) => bot.run({ signal, pollTimeout: config.pollTimeout }),
     async stop() { /* polling stops through the shared AbortSignal */ },
+    /** Used by the hub alert poller (services/hub-alerts.js). */
+    sendAlert: (target) => bot.sendAlert(target),
   };
 }
 

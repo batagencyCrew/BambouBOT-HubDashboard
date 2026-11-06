@@ -16,6 +16,9 @@ const { errorText } = require('./core/errors');
 const { createServices } = require('./services');
 const { lazyGmsService } = require('./services/gms');
 const { secretsOf } = require('./config');
+const { HubClient } = require('./clients/hub');
+const { HubService } = require('./services/hub');
+const { createHubAlertPoller } = require('./services/hub-alerts');
 
 const DEFAULT_FACTORIES = {
   discord: (deps) => require('./platforms/discord').createDiscordPlatform(deps),
@@ -25,9 +28,9 @@ const DEFAULT_FACTORIES = {
 /**
  * Build everything without touching the network.
  * @param {object} config            from loadConfig()
- * @param {object} [overrides]       { studio, getGmsService, factories, logger }, used by tests
+ * @param {object} [overrides]       { studio, getGmsService, hubClient, factories, logger }, used by tests
  */
-function createApp(config, { studio, getGmsService, factories = DEFAULT_FACTORIES, logger = console } = {}) {
+function createApp(config, { studio, getGmsService, hubClient, factories = DEFAULT_FACTORIES, logger = console, sleepImpl } = {}) {
   const secrets = () => secretsOf(config);
   const audit = createAudit({ logger, secrets });
 
@@ -39,6 +42,12 @@ function createApp(config, { studio, getGmsService, factories = DEFAULT_FACTORIE
   const access = new AccessStore(config.accessFile, { owners, logger });
 
   const services = createServices({ studio: bambou, getGmsService: getGmsService || lazyGmsService(config.gms) });
+  // Bambou Hub is optional: without HUB_URL + HUB_BOT_TOKEN, services.hub is null
+  // and the /hub commands answer that the hub is not configured.
+  const hubConfig = config.hub || { enabled: false };
+  services.hub = hubConfig.enabled || hubClient
+    ? new HubService({ client: hubClient || new HubClient({ baseUrl: hubConfig.url, token: hubConfig.token, timeoutMs: hubConfig.timeoutMs }) })
+    : null;
 
   const platforms = [];
   for (const name of ['discord', 'telegram']) {
@@ -48,7 +57,20 @@ function createApp(config, { studio, getGmsService, factories = DEFAULT_FACTORIE
     }
     platforms.push(factories[name]({ config: config[name], services, access, audit, logger, secrets }));
   }
-  return { config, studio: bambou, access, services, platforms, logger, secrets };
+
+  let hubAlerts = null;
+  if (services.hub && hubConfig.alerts) {
+    hubAlerts = createHubAlertPoller({
+      hub: services.hub, intervalMs: hubConfig.alertIntervalMs, logger, secrets, ...(sleepImpl ? { sleepImpl } : {}),
+      // The hub decides routing; a platform this process does not run is a failed delivery.
+      send: async ({ platform, ...target }) => {
+        const running = platforms.find((p) => p.name === platform);
+        if (!running || typeof running.sendAlert !== 'function') throw new Error(`${platform} is not running in this bot`);
+        await running.sendAlert(target);
+      },
+    });
+  }
+  return { config, studio: bambou, access, services, platforms, logger, secrets, hubAlerts };
 }
 
 /**
@@ -63,6 +85,13 @@ async function runApp(app, { signal } = {}) {
 
   const failed = [];
   const started = [];
+  // Alert delivery runs beside the platforms and never stops them (see services/hub-alerts.js).
+  // Its own controller, so it also stops when every platform has failed.
+  const alertControl = new AbortController();
+  const stopAlerts = () => alertControl.abort();
+  signal?.addEventListener('abort', stopAlerts, { once: true });
+  const alerts = app.hubAlerts ? app.hubAlerts.start(alertControl.signal) : null;
+  if (alerts) logger.log(`[hub] alert delivery on (${app.config.hub.url}, every ${Math.round(app.config.hub.alertIntervalMs / 1000)}s)`);
   // Discord's start() resolves once ready; Telegram's resolves when polling ends.
   const lifetimes = app.platforms.map(async (platform) => {
     try {
@@ -85,6 +114,9 @@ async function runApp(app, { signal } = {}) {
   for (const platform of app.platforms) {
     try { await platform.stop(); } catch { /* already down */ }
   }
+  stopAlerts();
+  signal?.removeEventListener('abort', stopAlerts);
+  if (alerts) await alerts;
   return { started, failed };
 }
 

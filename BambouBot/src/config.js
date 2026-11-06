@@ -61,6 +61,32 @@ function readEnvironment({ env = process.env, file } = {}) {
 
 const blank = (value) => value === undefined || value === null || String(value).trim() === '';
 
+/** http(s) URL without a trailing slash. An invalid value is reported and ignored. */
+function urlSetting(values, name, problems) {
+  const raw = String(values[name] ?? '').trim();
+  if (!raw) return null;
+  let parsed;
+  try { parsed = new URL(raw); } catch {
+    problems.push(`${name} must be a full http(s) URL, e.g. https://hub.example.com`);
+    return null;
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    problems.push(`${name} must be a full http(s) URL (http or https)`);
+    return null;
+  }
+  return raw.replace(/\/+$/, '');
+}
+
+/** true/false from an environment value; anything else is a configuration problem. */
+function booleanSetting(values, name, def, problems) {
+  if (blank(values[name])) return def;
+  const value = String(values[name]).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(value)) return true;
+  if (['false', '0', 'no', 'off'].includes(value)) return false;
+  problems.push(`${name} must be true or false`);
+  return def;
+}
+
 function intSetting(values, name, def, min, max, problems) {
   if (blank(values[name])) return def;
   const n = Number(values[name]);
@@ -126,13 +152,29 @@ function loadConfig({ env = process.env, file, only } = {}) {
     cacheTtlMs: intSetting(values, 'GMS_CACHE_TTL_MS', 30_000, 0, 3_600_000, problems),
   };
 
+  // Bambou Hub: optional. Without both values the hub module is simply off.
+  const hubUrl = urlSetting(values, 'HUB_URL', problems);
+  const hubToken = String(values.HUB_BOT_TOKEN || '').trim() || null;
+  if (hubToken && !/^hbt_[A-Za-z0-9_-]{10,}$/.test(hubToken)) problems.push('HUB_BOT_TOKEN must be a hub bot service token (hbt_…)');
+  if (hubToken && !hubUrl && blank(values.HUB_URL)) problems.push('HUB_URL is required when HUB_BOT_TOKEN is set');
+  if (hubUrl && !hubToken) problems.push('HUB_BOT_TOKEN is required when HUB_URL is set (create one in the hub: Users → Bot token)');
+  const hubEnabled = Boolean(hubUrl && hubToken);
+  const hub = {
+    enabled: hubEnabled,
+    url: hubUrl,
+    token: hubToken,
+    timeoutMs: intSetting(values, 'HUB_TIMEOUT_MS', 15_000, 1000, 120_000, problems),
+    alerts: hubEnabled && booleanSetting(values, 'HUB_ALERTS', true, problems),
+    alertIntervalMs: intSetting(values, 'HUB_ALERT_INTERVAL_MS', 20_000, 5_000, 600_000, problems),
+  };
+
   if (problems.length) throw new ConfigError(problems);
-  return { root: ROOT, envFile, discord, telegram, bambou, accessFile, gms };
+  return { root: ROOT, envFile, discord, telegram, bambou, accessFile, gms, hub };
 }
 
 /** Every secret value that must never appear in logs or public replies. */
 function secretsOf(config) {
-  return [config.discord.token, config.telegram.token, config.bambou.loginKey, config.gms.cookie].filter(Boolean);
+  return [config.discord.token, config.telegram.token, config.bambou.loginKey, config.gms.cookie, config.hub?.token].filter(Boolean);
 }
 
 module.exports = { loadConfig, parseEnv, readEnvironment, secretsOf, ConfigError, ROOT };
