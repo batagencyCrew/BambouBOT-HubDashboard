@@ -101,6 +101,14 @@ class Realtime:
         elif kind == "presence":
             from .ingest import handle_presence
             await asyncio.to_thread(handle_presence, self.app, site_id, message)
+        elif kind == "batch":
+            from .routers.agent import Batch, apply_batch
+            try:
+                batch = Batch.model_validate({k: v for k, v in message.items() if k != "type"})
+            except ValueError:
+                return
+            reply = await asyncio.to_thread(apply_batch, self.app, site_id, batch)
+            await self.agents[site_id].send({**reply, "type": "batch_ok", "seq": message.get("seq")})
 
     def is_online(self, site_id: str) -> bool:
         return site_id in self.agents

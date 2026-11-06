@@ -33,7 +33,10 @@ class Batch(BaseModel):
 
 @router.post("/batch")
 def batch(body: Batch, request: Request, sid: str = Depends(site_id)):
-    app = request.app
+    return apply_batch(request.app, sid, body)
+
+
+def apply_batch(app, sid: str, body: Batch) -> dict:
     result = {}
     if body.presence is not None:
         ingest.handle_presence(app, sid, body.presence)
