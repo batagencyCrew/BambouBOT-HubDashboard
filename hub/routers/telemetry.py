@@ -41,7 +41,7 @@ def logs(request: Request,
         clauses.append("site_id = ANY(%s::uuid[])")
         params.append(list(principal.site_scope))
     if worker:
-        clauses.append("(worker_id::text=%s OR worker_name=%s)")
+        clauses.append("(worker_id::text=%s OR worker_name=%s)")  # still bounded by the site/scope clause above
         params += [worker, worker]
     if level not in LEVELS:
         raise HTTPException(400, "Unknown level")

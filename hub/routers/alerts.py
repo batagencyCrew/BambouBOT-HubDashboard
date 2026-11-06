@@ -65,7 +65,7 @@ class Mute(BaseModel):
 def ack(alert_id: str, request: Request, principal: Principal = Depends(require("alerts:ack"))):
     db = request.app.state.db
     row = _alert(db, principal, alert_id)
-    db.execute("UPDATE alerts SET status='acknowledged', ack_by=%s, ack_at=now(), updated_at=now() WHERE id=%s AND status='open'",
+    db.execute("UPDATE alerts SET status='acknowledged', ack_by=%s, ack_at=now(), muted_until=NULL, updated_at=now() WHERE id=%s AND status IN ('open','muted')",
                (principal.user_id, row["id"]))
     audit.record(db, principal, "alert.ack", site_id=str(row["site_id"]) if row["site_id"] else None, target=row["title"], request=request)
     request.app.state.realtime.publish({"type": "alert", "event": "acknowledged", "alert": alerts.alert_view(

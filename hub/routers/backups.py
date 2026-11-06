@@ -46,7 +46,11 @@ def remotes(request: Request, principal: Principal = Depends(require("backups:ma
 
 @router.get("/backup-destinations")
 def destinations(request: Request, principal: Principal = Depends(require("sites:view"))):
-    return [_dest_view(r) for r in request.app.state.db.query("SELECT * FROM backup_destinations ORDER BY name")]
+    rows = request.app.state.db.query("SELECT * FROM backup_destinations ORDER BY name")
+    if principal.can("backups:manage"):
+        return [_dest_view(r) for r in rows]
+    # Viewers see names only (enough to read a site's schedule), not remote paths.
+    return [{"id": str(r["id"]), "name": r["name"], "enabled": r["enabled"]} for r in rows]
 
 
 def _check_destination(request, body: Destination):
@@ -126,6 +130,11 @@ def put_config(site_ref: str, body: SiteBackupConfig, request: Request, principa
 def request_backup(site_ref: str, request: Request, principal: Principal = Depends(require("backups:request"))):
     db = request.app.state.db
     site = services.resolve_site(db, principal, site_ref, "backups:request")
+    open_request = db.one("SELECT id FROM commands WHERE site_id=%s AND action='backup' AND status IN ('pending','delivered','running')",
+                          (site["id"],))
+    if open_request:
+        return {"command_id": str(open_request["id"]), "agent_online": request.app.state.realtime.is_online(str(site["id"])),
+                "already_queued": True}
     row = db.one("INSERT INTO commands(site_id, action, args, requested_by, source) VALUES(%s,'backup','{}'::jsonb,%s,%s) RETURNING *",
                  (site["id"], principal.user_id, principal.source))
     delivered = request.app.state.realtime.send_command(str(site["id"]), {"command_id": str(row["id"]), "action": "backup", "args": {}})

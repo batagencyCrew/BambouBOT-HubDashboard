@@ -108,7 +108,7 @@ def open_alert(app, rule: dict | None, site_id: str | None, worker_id: str | Non
 def resolve(app, dedup_key: str, note: str = "") -> bool:
     db = app.state.db
     row = db.one("UPDATE alerts SET status='resolved', resolved_at=now(), updated_at=now() "
-                 "WHERE dedup_key=%s AND status IN ('open','acknowledged') RETURNING *", (dedup_key,))
+                 "WHERE dedup_key=%s AND status IN ('open','acknowledged','muted') RETURNING *", (dedup_key,))
     if not row:
         return False
     app.state.realtime.publish({"type": "alert", "event": "resolved", "alert": alert_view(row, site_name(db, row["site_id"])),

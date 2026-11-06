@@ -22,7 +22,7 @@ def overview(request: Request, principal: Principal = Depends(require("sites:vie
     open_alerts = db.query("SELECT a.*, s.name AS site_name FROM alerts a LEFT JOIN sites s ON s.id=a.site_id "
                            "WHERE a.status IN ('open','acknowledged') AND (a.site_id IS NULL OR a.site_id = ANY(%s::uuid[])) "
                            "ORDER BY a.opened_at DESC LIMIT 20", (ids,))
-    totals = {"sites": len(sites), "online": sum(s["online"] or s["health"] != "offline" for s in sites),
+    totals = {"sites": len(sites), "online": sum(s["health"] != "offline" for s in sites),
               "healthy": sum(s["health"] == "healthy" for s in sites),
               "degraded": sum(s["health"] == "degraded" for s in sites),
               "offline": sum(s["health"] == "offline" for s in sites),

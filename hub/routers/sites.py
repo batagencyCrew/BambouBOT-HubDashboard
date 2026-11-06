@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -149,6 +150,10 @@ def worker_samples(site_ref: str, worker_id: str, request: Request, period: str 
                    principal: Principal = Depends(require("sites:view"))):
     db = request.app.state.db
     site = services.resolve_site(db, principal, site_ref)
+    try:
+        worker_id = str(uuid.UUID(worker_id))
+    except ValueError:
+        raise HTTPException(404, "Worker not found") from None
     window = services.period(period)
     bucket = "1 minute" if window.total_seconds() <= 86400 else "1 hour"
     return db.query(
