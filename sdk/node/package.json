@@ -1,0 +1,10 @@
+{
+  "name": "bambouhub",
+  "version": "2.0.0",
+  "description": "Bambou Hub SDK: logs, workers, metrics, costs, balances, proxy health, issues and commands for automation scripts",
+  "main": "src/index.js",
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "license": "UNLICENSED",
+  "private": true
+}
