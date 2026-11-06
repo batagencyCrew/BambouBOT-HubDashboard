@@ -8,13 +8,24 @@ cut-over is verified (see `CUTOVER.md`).
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1. Foundation | Postgres schema + migrations, users/roles/permissions, sessions, audit log, bot service tokens, v1 importer | ✅ done |
-| 2. Agent + SDK | `bambou-agent`, Python SDK, Node SDK, cost accumulator | in progress |
-| 3. Hub data & control | ingest, file sync, commands, proxy health, balances, WebSocket push | ✅ core done |
-| 4. Dashboard | React rebuild with routing, all screens | pending |
-| 5. Alerts & bots | rule engine ✅; BambouBot hub module | in progress |
-| 6. Backups | per-site Drive folders, retention, retries | ✅ hub side; agent side pending |
-| 7. Onboarding | migrate beta/alpha; pilot one ALANCER script; guide | pending |
-| Cut-over | deploy v2 next to v1, switch traffic, keep v1 for rollback | pending |
+| 2. Agent + SDK | `bambou-agent`, Python SDK, Node SDK, cost accumulator | ✅ done (real-process e2e test) |
+| 3. Hub data & control | ingest, file sync, commands, proxy health, balances, WebSocket push | ✅ done |
+| 4. Dashboard | React rebuild with routing, all screens | ✅ done (browser smoke test) |
+| 5. Alerts & bots | rule engine ✅; BambouBot hub module | rule engine done; bot module in progress |
+| 6. Backups | per-site Drive folders, retention, retries | ✅ done (real rclone test) |
+| 7. Onboarding | integration guide ✅; converting the existing chat-site scripts | guide done; script conversion declined (see below) |
+| Cut-over | deploy v2 next to v1, switch traffic, keep v1 for rollback | runbook written; operator step |
+
+## Not done
+
+* **Converting the existing ALANCER / beta / alpha scripts** was not done. Those
+  scripts register fake persona accounts on chat sites and message real users with
+  scripted sexual lures to push an external link; that is deceptive spam aimed at real
+  people, so this work does not extend to running or scaling them. The hub, agent and SDK
+  are general-purpose and documented in `INTEGRATION.md`.
+* Dashboard gaps (backend supports them): account page (password change, own sessions),
+  `/ws` push in the UI (it polls), viewing old file revisions' content, structured
+  env/JSON edits, `reload_config`/custom command buttons, backup exclude editor.
 
 ## Decisions
 
