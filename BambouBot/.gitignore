@@ -1,0 +1,7 @@
+# secrets and runtime state
+.env
+data/
+*.tmp
+
+# dependencies
+node_modules/

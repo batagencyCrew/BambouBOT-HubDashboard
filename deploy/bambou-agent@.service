@@ -1,0 +1,42 @@
+[Unit]
+# One instance per site:  systemctl enable --now bambou-agent@demo
+#
+# /etc/bambou-agent/demo.conf  (owner root, mode 600):
+#   HUB_URL=https://hub.example.com
+#   HUB_AGENT_TOKEN=hst_...
+#   HUB_SCRIPT_DIR=/opt/scripts/demo
+#   HUB_SCRIPT_COMMAND=/opt/scripts/demo/.venv/bin/python demo_bot.py
+#   HUB_FILES=config.json,.env,proxies.txt
+#   HUB_STATE_DIR=/var/lib/bambou-agent-demo
+Description=Bambou agent for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=automation
+Group=automation
+EnvironmentFile=/etc/bambou-agent/%i.conf
+WorkingDirectory=/opt/bambou-agent
+Environment=PYTHONPATH=/opt/bambou-agent/agent2
+ExecStart=/opt/bambou-agent/.venv/bin/python -m bambou_agent
+Restart=always
+RestartSec=5
+# The agent stops the script's process group itself on SIGTERM.
+KillMode=mixed
+TimeoutStopSec=60
+StateDirectory=bambou-agent-%i
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+# The script directory must be writable for config-file sync.
+ReadWritePaths=/opt/scripts
+RestrictSUIDSGID=yes
+LockPersonality=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bambou-agent-%i
+
+[Install]
+WantedBy=multi-user.target

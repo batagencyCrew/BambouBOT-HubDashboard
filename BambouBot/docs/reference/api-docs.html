@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>Documentation API — BambouAI</title>
+  <link rel="stylesheet" href="/api-docs.css"><script type="module" src="/api-docs.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="logo">B</span><span>BambouAI<small>Documentation API</small></span></a>
+    <div class="space-label" id="space-label">Votre espace</div>
+    <nav aria-label="Documentation">
+      <a href="#demarrage">Démarrage rapide</a><a href="#authentification">Authentification</a><a href="#assistant">Accès assistant IA</a><a href="#reference">Référence des routes</a><a href="#archives">Archiver un preset</a><a href="#erreurs">Erreurs et limites</a>
+    </nav>
+    <div class="sidebar-bottom"><a class="secondary" href="/openapi.json" download="bambouai-openapi.json">Télécharger OpenAPI</a><a href="/">← Retour au studio</a></div>
+  </aside>
+  <main>
+    <header><span class="eyebrow">BAMBOUAI · API D’INTÉGRATION</span><span class="version">Référence du 4 octobre 2026</span></header>
+    <section id="demarrage" class="intro">
+      <h1>Connecte tes outils<br>à ton espace.</h1>
+      <p class="lead">Génère des réponses avec tes presets, retrouve tes médias et gère tes réglages. Chaque exemple utilise l’adresse de l’espace ouvert.</p>
+      <div class="base-url"><span>URL de base</span><code id="base-url"></code><button type="button" id="copy-base">Copier</button></div>
+      <div class="steps"><article><span>01</span><h3>Utilise ta clé API</h3><p>Reçois-la de l’administrateur de l’espace et envoie-la dans l’en-tête <code>X-Bambou-Extension-Key</code>. Pour un assistant IA, crée plutôt une clé dédiée (<a href="#assistant">voir plus bas</a>).</p></article><article><span>02</span><h3>Récupère tes identifiants</h3><p>Lis <code>/api/extension/config</code> pour choisir un preset et un Media Vault.</p></article><article><span>03</span><h3>Appelle la génération</h3><p>Transmets le preset et l’historique à <code>/api/extension/generate</code>.</p></article></div>
+      <div class="note">La génération nécessite un moteur IA configuré dans le studio : fournisseur, URL, modèle et délai dans le menu <strong>Moteur IA</strong> ; clé du fournisseur dans <strong>Settings API Key</strong> (une clé par fournisseur). Ces réglages ne contiennent pas la clé BambouAI : elle ne fournit aucun crédit IA. Sans URL ou sans clé de moteur, la génération répond une erreur (500 pour les extensions, 503 pour un assistant).</div>
+      <h2>Premier appel</h2><p>Exemple cURL pour Bash, zsh ou WSL. Remplace la valeur de démonstration par ta clé. Pour chaque réponse, renvoie tout l’historique de la conversation : le serveur ne le garde pas. Les exemples utilisent <code>--fail-with-body</code> (curl 7.76 ou plus récent ; vérifie avec <code>curl --version</code>) ; avec un curl plus ancien, remplace-le par <code>--fail</code> (le corps de l’erreur n’est alors pas affiché). Dans les exemples de génération, remplace <code>REMPLACER_PAR_ID_DU_PRESET</code> par un id lu dans <code>/api/extension/config</code>.</p><div id="quickstart"></div>
+      <p class="muted">PowerShell : utilise Invoke-RestMethod.</p><pre><code>$env:BAMBOU_API_KEY = "VOTRE_CLE_API"
+$h = @{ "X-Bambou-Extension-Key" = $env:BAMBOU_API_KEY }
+Invoke-RestMethod "<span class="base-url-inline"></span>/api/extension/config" -Headers $h
+$corps = @{ presetId = "REMPLACER_PAR_ID_DU_PRESET"; messages = @(@{ role = "user"; content = "Bonjour, comment vas-tu ?" }) } | ConvertTo-Json -Depth 5
+try { Invoke-RestMethod "<span class="base-url-inline"></span>/api/extension/generate" -Method Post -Headers $h -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($corps)) -TimeoutSec 180 } catch { $_.ErrorDetails.Message }</code></pre>
+    </section>
+    <section id="authentification">
+      <h2>Trois accès, selon l’opération</h2>
+      <div class="auth-grid"><article class="panel"><span class="badge extension">CLÉ API</span><h3>Intégrations et extensions</h3><p>Clé de l’espace (une seule, partagée par les extensions et les workers), envoyée dans <code>X-Bambou-Extension-Key</code>. Elle permet de lister les presets et de générer des réponses, mais ouvre aussi des routes internes non documentées : ne la confie pas à un assistant (voir « Accès pour un assistant IA »).</p><p><code>Authorization: Bearer</code> n’est pas reconnu par ces routes.</p></article><article class="panel"><span class="badge assistant">CLÉ ASSISTANT</span><h3>Assistants IA</h3><p>Clé <code>bbk_…</code> propre à chaque assistant, créée par le propriétaire dans <strong>Settings → API Keys</strong>, envoyée dans <code>Authorization: Bearer</code>. Elle ne sert qu’à lister les presets autorisés et à générer des réponses, avec ses propres limites ; elle se met en pause ou se révoque à tout moment.</p></article><article class="panel"><span class="badge session">SESSION STUDIO</span><h3>Gestion de l’espace</h3><p>Envoie ta <strong>clé de connexion</strong> à <code>POST /api/login</code>, puis conserve le cookie <code>bambou_session</code>. Il donne accès à toute l’administration du studio (presets, médias, archives, clés fournisseur, comptes, flotte, réglages) : toutes les routes /api/ qui ne sont ni publiques ni à clé API l’exigent. Ne le confie pas à un assistant.</p><p>Durée du cookie : 12 heures. Un redémarrage du serveur demande une nouvelle connexion.</p></article></div>
+      <h3>Ouvrir une session avec cURL</h3><div id="session-example"></div>
+      <p>Les exemples Python et JavaScript de gestion ouvrent leur propre session avec la variable d’environnement <code>BAMBOU_LOGIN_KEY</code>. Les exemples d’extension utilisent <code>BAMBOU_API_KEY</code> et ceux d’assistant <code>BAMBOU_ASSISTANT_KEY</code>. JavaScript s’exécute avec Node.js 18 ou plus récent ; Python utilise le paquet <code>requests</code>.</p>
+      <p class="muted">Les clés de chaque espace s’utilisent sur son propre domaine ; le fichier OpenAPI téléchargé renvoie à ce même domaine. Les extraits sont prévus pour une intégration côté serveur ; cette API ne fournit pas d’accès CORS pour un site web d’un autre domaine.</p>
+    </section>
+    <section id="assistant">
+      <h2>Accès pour un assistant IA</h2>
+      <p class="lead">Un assistant (agent IA, script, outil tiers) utilise <strong>sa propre clé</strong>, distincte de celle des extensions : elle se coupe ou se remplace sans toucher à la flotte, et elle n’ouvre que deux routes.</p>
+      <div class="steps"><article><span>01</span><h3>Le propriétaire crée la clé</h3><p>Dans le studio : <strong>Settings → API Keys → Clés pour assistants → Nouvelle clé</strong>. Il choisit un nom, les presets autorisés et les limites. La clé <code>bbk_…</code> n’est affichée qu’une fois ; le serveur n’en garde que l’empreinte.</p></article><article><span>02</span><h3>L’assistant lit les presets</h3><p><code>GET /api/assistant/presets</code> renvoie les presets que la clé peut utiliser, avec leur identifiant.</p></article><article><span>03</span><h3>L’assistant génère</h3><p><code>POST /api/assistant/generate</code> avec un <code>presetId</code> et l’historique ; la réponse est la prochaine réplique du personnage.</p></article></div>
+      <p>La clé s’envoie dans <code>Authorization: Bearer bbk_…</code> (ou dans <code>X-Bambou-Api-Key</code>). Elle n’est jamais acceptée sur les autres routes, et la clé des extensions n’est jamais acceptée sur celles-ci.</p>
+      <div id="assistant-example"></div>
+      <h3>Ce que fait la génération</h3>
+      <ul>
+        <li>Elle joue le personnage du preset choisi : ce n’est pas un chat généraliste. Le prompt, le ton et la langue viennent du preset ; il n’y a pas de prompt système à fournir.</li>
+        <li>Les réponses sont courtes. Un filtre remplace par une réplique du personnage les phrases qui avouent être une IA, un bot ou un robot, ou ne pas avoir de photo ; sa liste de formulations est fixe et ne donne aucune garantie (« assistant virtuel », « modèle de langage », « chatbot »… passent). Relis la réponse si ce point compte.</li>
+        <li>La réponse peut contenir le lien du preset et un ordre d’arrêt (<code>stopConversation: true</code> : envoyer le contenu s’il y en a, puis cesser de répondre ; le contenu peut être vide). <code>converted</code> vaut <code>true</code> seulement quand l’interlocuteur dit avoir rejoint après avoir reçu le lien : la réponse porte alors aussi <code>stopConversation: true</code>.</li>
+        <li>Texte seul : ni image ni pièce jointe en entrée, aucun média en sortie.</li>
+        <li>Rien n’est mémorisé : renvoie tout l’historique (jusqu’à 40 messages) à chaque appel, en terminant par le message <code>user</code> auquel répondre. Rien n’est archivé, aucun contact n’est réservé, aucun compteur de la flotte n’est touché.</li>
+        <li>Aucun nouvel essai après une erreur du moteur IA : <code>502</code> ou <code>504</code> avec un message générique, réessaie plus tard (une réponse vide du moteur donne aussi <code>502</code>). Une même génération peut demander jusqu’à deux appels au moteur, sous le même délai.</li>
+      </ul>
+      <h3>Limites</h3>
+      <div class="table-wrap"><table><thead><tr><th>Limite</th><th>Valeur</th><th>Réglage</th></tr></thead><tbody>
+        <tr><td>Générations par minute</td><td>20 par défaut</td><td>1 à 600, par clé</td></tr>
+        <tr><td>Générations simultanées</td><td>2 par défaut</td><td>1 à 8, par clé</td></tr>
+        <tr><td>Générations par jour (UTC)</td><td>1 000 par défaut</td><td>1 à 100 000, par clé ; remis à zéro à minuit UTC et au redémarrage du serveur</td></tr>
+        <tr><td>Presets utilisables</td><td>tous par défaut</td><td>liste choisie par clé</td></tr>
+        <tr><td>Lecture des presets</td><td>120 appels par minute et par clé</td><td>fixe ; ne consomme pas le quota de génération</td></tr>
+        <tr><td>Corps de la requête</td><td>256 Kio</td><td>fixe</td></tr>
+        <tr><td>Historique</td><td>40 messages, 2 000 caractères par message, 30 000 au total</td><td>fixe ; caractères comptés en unités UTF-16 (un emoji en vaut 2) ; rôles <code>user</code> et <code>assistant</code> seulement, dernier message <code>user</code></td></tr>
+        <tr><td>Clés invalides</td><td>30 en 10 minutes par adresse</td><td>fixe ; au-delà, <code>429</code> pour cette adresse</td></tr>
+      </tbody></table></div>
+      <p class="muted">Chaque requête de génération acceptée compte dans la limite par minute. Le crédit du jour est rendu quand la requête est refusée avant toute génération (<code>400</code>, <code>403</code>, <code>413</code>), pour un preset inconnu (<code>404</code>) ou un moteur non configuré (<code>503</code>) ; il reste consommé après un échec du moteur (<code>502</code>, <code>504</code>). Les compteurs d’usage affichés dans le studio sont remis à zéro à chaque redémarrage du serveur.</p>
+      <h3>Réponses d’erreur</h3>
+      <div class="table-wrap"><table><thead><tr><th>Code</th><th>Message</th><th>Que faire</th></tr></thead><tbody>
+        <tr><td>400</td><td>Champ non pris en charge, historique ou message invalide…</td><td>Corriger la requête : seuls <code>presetId</code> et <code>messages</code> sont admis.</td></tr>
+        <tr><td>401</td><td><code>Cle API invalide, revoquee ou absente.</code></td><td>Clé absente, fausse, mal copiée ou révoquée : en demander une nouvelle au propriétaire.</td></tr>
+        <tr><td>403</td><td><code>Cette cle est en pause.</code> ou preset non autorisé</td><td>Le propriétaire a coupé la clé ou limité ses presets (une clé limitée reçoit 403, jamais 404, pour un identifiant qu’elle n’a pas le droit d’utiliser) ; réessayer quand il l’a reprise.</td></tr>
+        <tr><td>404</td><td><code>Preset inconnu.</code></td><td>Clé ayant accès à tous les presets, ou preset supprimé : relire <code>/api/assistant/presets</code>.</td></tr>
+        <tr><td>413</td><td>Corps trop grand</td><td>Réduire l’historique.</td></tr>
+        <tr><td>429</td><td>Limite atteinte</td><td>Attendre <code>Retry-After</code> secondes.</td></tr>
+        <tr><td>502 / 503 / 504</td><td>Moteur IA indisponible, non configuré ou trop lent ; <code>503</code> avec <code>Retry-After: 5</code> : service momentanément indisponible</td><td>Réessayer plus tard avec un délai croissant ; prévoir un délai client supérieur à celui du moteur (120 s par défaut). Aucune erreur du moteur n’est rejouée côté serveur.</td></tr>
+      </tbody></table></div>
+      <h3>Contrôle par le propriétaire</h3>
+      <p>Dans <strong>Settings → API Keys</strong> : créer une clé par assistant, modifier son nom, ses limites et ses presets (effet immédiat), la <strong>mettre en pause</strong> puis la reprendre, ou la <strong>révoquer</strong> (définitif). Les mêmes opérations existent en API avec la session studio : <code>GET/POST /api/studio/api-keys</code> et <code>PATCH/DELETE /api/studio/api-keys/{keyId}</code> (catégorie « Clés API » de la référence).</p>
+      <p class="muted">Usage côté serveur uniquement : cette API n’autorise pas les appels depuis un navigateur d’un autre domaine (pas de CORS). Ne place jamais une clé dans une page publique.</p>
+    </section>
+    <section id="reference">
+      <div class="section-heading"><div><h2>Référence des routes</h2><p id="route-count" class="muted"></p></div><label>Exemples en <select id="language"><option value="curl">cURL</option><option value="python">Python</option><option value="javascript">JavaScript</option></select></label></div>
+      <div class="filters"><label class="search-label" for="search">Rechercher une route</label><input id="search" type="search" placeholder="Preset, génération, médias…"><select id="category" aria-label="Catégorie"><option value="">Toutes les catégories</option></select></div>
+      <div id="routes" aria-live="polite"><p>Chargement de la référence…</p></div>
+    </section>
+    <section id="archives">
+      <h2>Archiver et restaurer un preset</h2>
+      <p>Lis la configuration complète, modifie <code>archivedAt</code> sur le preset voulu, puis renvoie la configuration. Une date ISO archive le preset ; <code>null</code> le restaure.</p>
+      <div class="note">Le preset garde son contenu et son identifiant. Il disparaît de la liste du studio, mais reste disponible aux intégrations et aux comptes déjà associés. La route PUT enregistre tout le document : conserve les autres champs du GET le plus récent.</div>
+      <div id="archive-example"></div>
+    </section>
+    <section id="erreurs">
+      <h2>Comprendre les réponses</h2>
+      <div class="table-wrap"><table><thead><tr><th>Code</th><th>Signification</th><th>À vérifier</th></tr></thead><tbody>
+        <tr><td>200</td><td>Requête traitée</td><td>Pour une génération, lire aussi <code>stopConversation</code> et <code>contentText</code>.</td></tr>
+        <tr><td>201</td><td>Clé créée</td><td>La clé en clair n’est renvoyée que par cette réponse.</td></tr>
+        <tr><td>400</td><td>Paramètre refusé par certaines routes</td><td>Le message JSON <code>error</code> précise le problème.</td></tr>
+        <tr><td>401</td><td>Authentification refusée</td><td>Routes à clé API : « Cle extension invalide. » ou « Cle API invalide, revoquee ou absente. » (clé absente, fausse, révoquée ou en-tête mal nommé). Routes studio : « Authentification requise. » (cookie absent ou expiré). Sans session, un chemin /api/ inexistant, une mauvaise méthode HTTP (par exemple GET sur une route POST) ou une requête OPTIONS répondent aussi 401 « Authentification requise. » : ni 404 ni 405 ; vérifie chemin et méthode avant la clé. Un 401 d’un autre texte sur /api/extension/generate vient du fournisseur IA (clé du moteur invalide).</td></tr>
+        <tr><td>402</td><td>Crédit du fournisseur IA épuisé</td><td>Statut du fournisseur renvoyé tel quel par la génération des extensions ; recharger le compte fournisseur.</td></tr>
+        <tr><td>403</td><td>Clé en pause ou preset non autorisé</td><td>Routes d’assistant : le propriétaire a coupé la clé ou limité ses presets.</td></tr>
+        <tr><td>404</td><td>Ressource introuvable</td><td>Preset, conversation ou média inexistant, ou route inconnue avec une session ouverte. URL et identifiants exacts, encodés dans les segments de chemin.</td></tr>
+        <tr><td>413</td><td>Corps trop grand</td><td>Routes d’assistant : plus de 256 Kio. Routes de gestion des clés (session studio) : plus de 8 Kio.</td></tr>
+        <tr><td>429</td><td>Limite atteinte</td><td>Sur /api/login : 5 échecs en 10 minutes pour une même adresse, respecter Retry-After (600 s). Sur /api/assistant/* : quota de la clé, respecter Retry-After. Sur /api/extension/generate : limite du fournisseur IA, sans Retry-After ; réessayer avec un délai croissant.</td></tr>
+        <tr><td>500</td><td>Erreur de traitement, de configuration ou de validation</td><td>Lire <code>error</code>. Génération des extensions : « Preset inconnu. », « Historique Playground invalide. », « Message Playground invalide. », « Media Vault invalide. », « Aucun opener actif dans ce preset. », « Configure d’abord l’URL du PC IA dans Comptes. » ou « Configure d’abord la cle privee du PC IA. » (moteur non configuré), « Corps de requete trop grand. » (plus de 8 Mio), message d’analyse JSON (corps invalide). Ces erreurs de validation ne sont pas des 400.</td></tr>
+        <tr><td>502 / 503 / 504</td><td>Fournisseur en erreur, non configuré ou délai dépassé</td><td>504 « Le service a mis trop de temps. » : délai du moteur dépassé. Avec un fournisseur compatible OpenAI (DeepSeek, OpenAI), son statut (401, 402, 403, 404, 429, 5xx) est renvoyé tel quel avec son message par les extensions ; si un moteur de secours est configuré, il prend d’abord le relais pour 402, 408, 409, 425, 429, 5xx et les délais dépassés. Les routes d’assistant ne renvoient que 502, 503 ou 504 avec un message générique. Éviter de répéter aveuglément une génération.</td></tr>
+      </tbody></table></div>
+      <p>Les erreurs du dashboard utilisent <code>{"error":"Explication"}</code>. Le proxy peut retourner du HTML en cas de panne : vérifie le statut et le type de contenu avant de décoder du JSON.</p>
+      <p>Génération : 8 Mio de JSON, historique limité aux 250 derniers messages. Configuration : 1 Mio. Import de preset : 4 Mio. Le délai du moteur (« Délai maximum », menu Moteur IA : 120 secondes par défaut, de 5 à 600) couvre l’ensemble des tentatives du moteur principal ; si un moteur de secours est configuré, il dispose ensuite de son propre délai, de sorte que la durée totale peut approcher le double du réglage. Prévois un délai client d’au moins le double du réglage plus 10 secondes, ou accepte de couper à 180 secondes et de ne pas rejouer automatiquement. Un proxy intermédiaire peut couper plus tôt et répondre en HTML (statut 5xx).</p>
+      <p>Le champ <code>content</code> d’une génération est une liste d’éléments, avec notamment <code>type</code>, <code>content</code> et <code>delayMs</code>. Pour du texte simple, utilise <code>contentText</code>. Une réponse vide accompagnée de <code>stopConversation: true</code> est un résultat à respecter.</p>
+    </section>
+    <footer>Référence des intégrations et de la gestion du studio · <a href="/openapi.json" download>OpenAPI 3.0.3</a> · <a href="/">Retour au studio</a></footer>
+  </main><div id="notice" role="status" aria-live="polite"></div>
+</body></html>

@@ -1,0 +1,21 @@
+{
+  "name": "bamboubot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BambouAI Discord + Telegram management bots in one process: presets, API keys, GetMySocial links and per-platform owner/approved-user permissions.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "start:discord": "node index.js --only discord",
+    "start:telegram": "node index.js --only telegram",
+    "test": "node --test test/*.test.js",
+    "migrate:access": "node scripts/migrate-access.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0"
+  }
+}

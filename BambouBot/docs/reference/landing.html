@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>BambouAI Studio</title>
+    <link rel="stylesheet" href="/styles.css?v=persona-en-2">
+  </head>
+  <body>
+    <div id="login-view" class="login-view" hidden>
+      <form id="login-form" class="login-panel">
+        <div class="brand-mark" aria-hidden="true">B</div>
+        <h1>BambouAI</h1>
+        <p>Studio de configuration</p>
+        <label for="admin-key">Clé administrateur</label>
+        <input id="admin-key" name="key" type="password" autocomplete="current-password" required>
+        <button type="submit" class="button primary wide">Se connecter</button>
+        <p id="login-error" class="form-error" role="alert"></p>
+      </form>
+    </div>
+
+    <div id="app" class="app-shell" hidden>
+      <aside class="app-sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">B</div>
+          <div>
+            <strong>BambouAI</strong>
+            <span>Espace principal</span>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Navigation principale">
+          <div class="nav-section capital-nav">
+            <button type="button" class="nav-item" data-toast="What's New arrive quand le changelog public sera branche.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M11.5 2.5 14.7 9l7.1 1-5.1 5 1.2 7-6.4-3.4L5.1 22l1.2-7-5.1-5 7.1-1 3.2-6.5Z"/></svg>
+              </span>
+              <span>What's New</span>
+            </button>
+            <button type="button" class="nav-item" data-toast="Top-Up sera utile quand la facturation sera branchee.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg>
+              </span>
+              <span>Top-Up</span>
+            </button>
+            <button type="button" class="nav-item active" data-view="studio">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 0 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+              </span>
+              <span>Settings</span>
+            </button>
+            <button type="button" class="nav-item" data-view="archives">
+              <span class="nav-symbol" aria-hidden="true">▤</span><span>Archives des presets</span>
+            </button>
+            <button type="button" class="nav-item" data-view="media">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.8"/><circle cx="9" cy="9" r="1.5"/><path d="m20 16-4.5-4.5a2 2 0 0 0-2.8 0L5 19"/></svg>
+              </span>
+              <span>Media Vault</span>
+            </button>
+            <button type="button" class="nav-item" data-toast="Stats arrive apres la connexion complète des workers.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M3 20h18"/><rect x="5" y="10" width="4" height="10" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/><rect x="15" y="13" width="4" height="7" rx="1"/></svg>
+              </span>
+              <span>Stats</span>
+            </button>
+            <button type="button" class="nav-item" data-view="playground">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v5.5l-5.8 8.8A3 3 0 0 0 6.7 22h10.6a3 3 0 0 0 2.5-4.7L14 8.5V3"/><path d="M7.5 16h9"/></svg>
+              </span>
+              <span>Playground</span>
+            </button>
+            <button type="button" class="nav-item" data-view="conversations">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 4h16v12H8l-4 4Z"/><path d="M8 9h8"/><path d="M8 12h5"/></svg>
+              </span>
+              <span>Conversations</span>
+            </button>
+            <button type="button" class="nav-item" data-view="omegleweb">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><path d="M2 12h20"/></svg>
+              </span>
+              <span>Réglages extension</span>
+            </button>
+            <button type="button" class="nav-item" data-view="blocked">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+              </span>
+              <span>Messages bloqués</span>
+            </button>
+            <button type="button" class="nav-item" data-view="snapchat">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 2c3 0 5 2.2 5 5.4 0 1 .3 2 .9 2.7.5.6 1.3.9 2.1 1 .3 0 .5.4.3.7-.6.9-1.7 1.3-2.6 1.5-.3 0-.4.4-.2.6.5.8 1.4 1.2 2.3 1.3.3 0 .4.5.1.7-1.3.9-3 1.1-3.9 1.2-.3.6-.2 1.4-1 1.4-.6 0-1-.4-1.9-.4s-1.4.9-3.2.9-2.4-.9-3.2-.9-1.3.4-1.9.4c-.8 0-.7-.8-1-1.4-.9-.1-2.6-.3-3.9-1.2-.3-.2-.2-.7.1-.7.9-.1 1.8-.5 2.3-1.3.2-.2.1-.6-.2-.6-.9-.2-2-.6-2.6-1.5-.2-.3 0-.7.3-.7.8-.1 1.6-.4 2.1-1 .6-.7.9-1.7.9-2.7C7 4.2 9 2 12 2Z"/></svg>
+              </span>
+              <span>Settings Snapchat</span>
+            </button>
+            <button type="button" class="nav-item" data-view="accounts">
+              <span class="nav-symbol" aria-hidden="true">⚙</span>
+              <span>Moteur IA</span>
+            </button>
+            <button type="button" class="nav-item" data-view="apikeys">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78m0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              </span>
+              <span>Settings API Key</span>
+            </button>
+            <a class="nav-item" href="/api-docs.html">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/><path d="m14 4-4 16"/></svg>
+              </span>
+              <span>Documentation API</span>
+            </a>
+            <button type="button" class="nav-item" data-toast="Affiliate n'est pas encore active.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 8.5a3.5 3.5 0 0 0-3-1.2c-1.8 0-3 .8-3 2.1 0 3 6 1.4 6 5.2 0 1.4-1.2 2.1-3 2.1a4 4 0 0 1-3.4-1.5"/><path d="M12 5.5v13"/></svg>
+              </span>
+              <span>Affiliate</span>
+            </button>
+            <button type="button" class="nav-item" data-toast="Members sera ajoute quand les acces equipe seront prets.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>
+              </span>
+              <span>Members</span>
+            </button>
+            <button type="button" class="nav-item" data-toast="Guides & Video Course sera ajoute plus tard.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5Z"/><path d="M12 2v15"/></svg>
+              </span>
+              <span>Guides &amp; Video Course</span>
+            </button>
+            <button type="button" class="nav-item" data-toast="Support sera branche quand le site public sera finalise.">
+              <span class="nav-symbol" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 14v-3a8 8 0 0 1 16 0v3"/><path d="M18 19a3 3 0 0 1-3 3h-2"/><rect x="2" y="13" width="4" height="6" rx="2"/><rect x="18" y="13" width="4" height="6" rx="2"/></svg>
+              </span>
+              <span>Support</span>
+            </button>
+          </div>
+          <button type="button" class="nav-item active" data-view="studio">
+            <span class="nav-symbol" aria-hidden="true">AI</span>
+            <span>Studio IA</span>
+          </button>
+          <button type="button" class="nav-item" data-view="accounts">
+            <span class="nav-symbol" aria-hidden="true">@</span>
+            <span>Comptes</span>
+          </button>
+          <button type="button" class="nav-item" data-view="playground">
+            <span class="nav-symbol" aria-hidden="true">&gt;</span>
+            <span>Playground</span>
+          </button>
+          <button type="button" class="nav-item" data-view="conversations">
+            <span class="nav-symbol" aria-hidden="true">✉</span>
+            <span>Conversations</span>
+          </button>
+          <button type="button" class="nav-item" data-view="omegleweb">
+            <span class="nav-symbol" aria-hidden="true">🌐</span>
+            <span>Réglages extension</span>
+          </button>
+          <button type="button" class="nav-item" data-view="blocked">
+            <span class="nav-symbol" aria-hidden="true">🚫</span>
+            <span>Messages bloqués</span>
+          </button>
+          <button type="button" class="nav-item" data-view="snapchat">
+            <span class="nav-symbol" aria-hidden="true">👻</span>
+            <span>Settings Snapchat</span>
+          </button>
+          <button type="button" class="nav-item" data-view="apikeys">
+            <span class="nav-symbol" aria-hidden="true">🔑</span>
+            <span>Settings API Key</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="domain-dot" aria-hidden="true"></span>
+          <div>
+            <strong>bambouaibot.com</strong>
+            <span>Connecté</span>
+          </div>
+          <button id="sidebar-logout-button" type="button" class="sidebar-logout">Logout</button>
+        </div>
+      </aside>
+
+      <section class="app-main">
+        <header class="topbar">
+          <div>
+            <p id="page-eyebrow" class="eyebrow">Configuration</p>
+            <h1 id="page-title">Settings</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="save-status" class="save-status">Synchronisé</span>
+            <button id="save-button" type="button" class="button primary">Enregistrer</button>
+            <button id="logout-button" type="button" class="button ghost">Déconnexion</button>
+          </div>
+        </header>
+
+        <main class="content">
+          <section id="view-studio" class="view">
+            <div class="studio-intro">
+              <div>
+                <h2>Settings</h2>
+                <p>Configure tes presets, le style, les phases et les CTA depuis un panneau proche de CapitalAI.</p>
+              </div>
+            </div>
+
+            <div class="studio-layout">
+              <aside class="preset-sidebar preset-control-card">
+                <div class="preset-select-label" id="preset-group-label">Groupe</div>
+                <div id="preset-group-chips" class="group-chips" role="group" aria-labelledby="preset-group-label"></div>
+
+                <label class="preset-select-label" for="preset-list">Tes presets</label>
+                <select id="preset-list" class="preset-switcher" size="8"></select>
+
+                <div class="preset-action-row" aria-label="Actions preset">
+                  <button id="add-preset" type="button" class="icon-action primary" title="Nouveau preset" aria-label="Nouveau preset">+</button>
+                  <button type="button" class="icon-action" title="Renommer le preset" aria-label="Renommer le preset" data-toast="Renomme le preset dans Main Settings.">✎</button>
+                  <button id="duplicate-preset" type="button" class="icon-action" title="Dupliquer le preset" aria-label="Dupliquer le preset">▣</button>
+                  <button id="export-preset" type="button" class="icon-action" title="Exporter le preset" aria-label="Exporter le preset">EX</button>
+                  <button id="import-preset" type="button" class="icon-action" title="Importer un preset" aria-label="Importer un preset">IM</button>
+                  <button id="archive-preset" type="button" class="icon-action" title="Archiver le preset" aria-label="Archiver le preset">AR</button>
+                  <button id="delete-preset" type="button" class="icon-action danger" title="Supprimer le preset" aria-label="Supprimer le preset">⌫</button>
+                </div>
+                <input id="preset-import-input" type="file" accept="application/json,.json" hidden>
+
+                <details id="preset-organizer" class="preset-organizer">
+                  <summary>Organiser en groupes</summary>
+                  <div id="preset-organizer-body" class="preset-organizer-body"></div>
+                </details>
+
+                <div class="module-divider"></div>
+                <div class="panel-label">AI Chatting</div>
+                <div id="editor-tabs" class="editor-tabs module-menu" role="tablist">
+                  <button type="button" class="editor-tab" data-tab="optimizations"><span class="module-icon">♢</span>Optimizations</button>
+                  <button type="button" class="editor-tab active" data-tab="main"><span class="module-icon">⚙</span>Main Settings</button>
+                  <button type="button" class="editor-tab" data-tab="openers"><span class="module-icon">⊞</span>Openers</button>
+                  <button type="button" class="editor-tab" data-tab="phases"><span class="module-icon">↔</span>Chatting Phases</button>
+                  <button type="button" class="editor-tab" data-tab="cta"><span class="module-icon">⊙</span>Call-To-Action</button>
+                  <button type="button" class="editor-tab" data-tab="urls"><span class="module-icon">↗</span>URLs</button>
+                  <button type="button" class="editor-tab" data-tab="objections"><span class="module-icon">⬡</span>Objections</button>
+                  <button type="button" class="editor-tab" data-tab="sprinkles"><span class="module-icon">☆</span>Sprinkles</button>
+                  <button type="button" class="editor-tab" data-tab="followups"><span class="module-icon">▱</span>Follow-ups</button>
+                  <button type="button" class="editor-tab" data-tab="finishers"><span class="module-icon">⚑</span>Finisher</button>
+                  <button type="button" class="editor-tab" data-tab="ignorelist"><span class="module-icon">⊘</span>Ignore condition</button>
+                </div>
+              </aside>
+
+              <section class="preset-editor">
+                <div class="editor-heading">
+                  <div>
+                    <p class="eyebrow">Preset actif</p>
+                    <h2 id="preset-heading">Chargement...</h2>
+                  </div>
+                  <label class="status-toggle">
+                    <input id="preset-cta-toggle" type="checkbox">
+                    <span>CTA actif</span>
+                  </label>
+                </div>
+
+                <div id="editor-content" class="editor-content"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="view-archives" class="view" hidden>
+            <div class="studio-intro"><div>
+              <h2>Archives des presets</h2>
+              <p>Retrouve les presets rangés hors de la liste du studio et restaure-les à tout moment. Les comptes déjà associés conservent leurs réglages.</p>
+              <p id="preset-archives-count" role="status"></p>
+            </div></div>
+            <div id="preset-archives-list"></div>
+          </section>
+
+          <section id="view-media" class="view" hidden>
+            <div class="media-vault-layout">
+              <aside class="media-model-card">
+                <div class="field">
+                  <label for="media-preset-select">Media Vault</label>
+                  <select id="media-preset-select"></select>
+                </div>
+                <div id="media-vault-id-card" class="media-id-card"></div>
+
+                <div class="preset-action-row media-actions" aria-label="Actions Media Vault">
+                  <button id="media-add-vault-button" type="button" class="icon-action primary" title="Nouveau Media Vault" aria-label="Nouveau Media Vault">+</button>
+                  <button id="media-rename-vault" type="button" class="icon-action" title="Renommer le Media Vault" aria-label="Renommer le Media Vault">E</button>
+                  <button type="button" class="icon-action" title="Dupliquer" aria-label="Dupliquer" data-toast="Duplication media a venir.">D</button>
+                  <button type="button" class="icon-action" title="Exporter" aria-label="Exporter" data-toast="Export Media Vault a venir.">DL</button>
+                  <button type="button" class="icon-action" title="Importer" aria-label="Importer" data-toast="Import Media Vault a venir.">UL</button>
+                  <button id="media-delete-vault" type="button" class="icon-action danger" title="Supprimer le Media Vault" aria-label="Supprimer le Media Vault">X</button>
+                </div>
+
+                <div class="module-divider"></div>
+                <div class="media-day-list" id="media-day-list"></div>
+                <button id="media-add-day" type="button" class="media-add-day">+ Add Day</button>
+              </aside>
+
+              <section class="media-gallery-panel">
+                <div class="media-gallery-head">
+                  <div>
+                    <p class="eyebrow">Media Vault</p>
+                    <h2 id="media-day-heading">Outfit Day 1</h2>
+                  </div>
+                  <span id="media-count" class="counter">0</span>
+                </div>
+
+                <div id="media-category-tabs" class="media-category-tabs" role="tablist">
+                  <button type="button" class="media-category active" data-media-category="primary">Primary</button>
+                  <button type="button" class="media-category" data-media-category="sad">Sad</button>
+                  <button type="button" class="media-category" data-media-category="happy">Happy</button>
+                  <button type="button" class="media-category" data-media-category="sexy">Sexy</button>
+                  <button type="button" class="media-category" data-media-category="pose">Pose</button>
+                  <button type="button" class="media-category" data-media-category="audio">Voicenotes</button>
+                  <button type="button" class="media-category" data-media-category="hidden">Hidden</button>
+                </div>
+
+                <input id="media-upload-input" type="file" accept="video/mp4,.mp4,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4,audio/webm,audio/ogg,.mp3,.wav,.m4a,.webm,.ogg" multiple hidden>
+                <div id="media-grid" class="media-grid">
+                  <div class="empty-state">Aucune photo dans cette categorie.</div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section id="view-accounts" class="view" hidden>
+            <div class="view-heading">
+              <div>
+                <h2>Moteur</h2>
+                <p>Paramètres globaux du moteur de génération.</p>
+              </div>
+            </div>
+            <section class="settings-band">
+              <div class="band-heading">
+                <div>
+                  <h3>Moteur de génération</h3>
+                  <p>Paramètres globaux utilisés par les presets BambouAI.</p>
+                </div>
+              </div>
+              <div id="engine-settings" class="form-grid"></div>
+            </section>
+          </section>
+
+          <section id="view-playground" class="view" hidden>
+            <div class="view-heading">
+              <div>
+                <h2>Playground</h2>
+                <p>Teste un preset contre le modèle entraîné sur le PC IA.</p>
+              </div>
+              <button id="reset-playground" type="button" class="button secondary">Nouvelle conversation</button>
+            </div>
+            <div class="playground-toolbar">
+              <div class="field">
+                <label for="playground-preset">Preset</label>
+                <select id="playground-preset"></select>
+              </div>
+              <div id="playground-engine-status" class="engine-indicator">
+                <span aria-hidden="true"></span>
+                Moteur non testé
+              </div>
+            </div>
+            <section class="playground-surface">
+              <div id="playground-messages" class="playground-messages">
+                <div class="empty-state">Écris un premier message pour commencer le test.</div>
+              </div>
+              <form id="playground-form" class="reply-form">
+                <label class="sr-only" for="playground-input">Message de test</label>
+                <textarea id="playground-input" rows="2" placeholder="Message de l’utilisateur..."></textarea>
+                <button type="submit" class="button primary">Envoyer</button>
+              </form>
+            </section>
+          </section>
+
+          <section id="view-monitor" class="view" hidden>
+            <div class="view-heading">
+              <div>
+                <h2>ChatNow</h2>
+                <p>État des comptes, réglages IA et accès aux conversations ChatNow.</p>
+              </div>
+              <button id="refresh-button" type="button" class="button secondary">Actualiser</button>
+            </div>
+
+            <div class="metrics" aria-label="Indicateurs">
+              <article class="metric">
+                <span>Comptes en ligne</span>
+                <strong id="metric-online">-</strong>
+              </article>
+              <article class="metric">
+                <span>Conversations</span>
+                <strong id="metric-conversations">-</strong>
+              </article>
+              <article class="metric">
+                <span>Messages non lus</span>
+                <strong id="metric-unread">-</strong>
+              </article>
+              <article class="metric">
+                <span>En attente</span>
+                <strong id="metric-pending">-</strong>
+              </article>
+            </div>
+
+            <div id="account-list" class="live-account-list"></div>
+
+            <section class="chatnow-config-panel">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Configuration</p>
+                  <h3>Réglages des comptes ChatNow</h3>
+                </div>
+                <p>Choisis ici quel preset et quel Media Vault chaque compte doit utiliser.</p>
+              </div>
+              <div id="chatnow-add-account" class="chatnow-add-account"></div>
+              <div id="chatnow-account-config-list" class="account-config-list chatnow-account-config-list"></div>
+            </section>
+
+            <section class="conversation-workspace">
+              <aside class="conversation-sidebar">
+                <div class="conversation-toolbar">
+                  <div>
+                    <p class="eyebrow">Messagerie</p>
+                    <h3 id="conversation-title">ChatNow</h3>
+                  </div>
+                  <span id="conversation-count" class="counter">0</span>
+                </div>
+                <label class="search-box">
+                  <span class="sr-only">Rechercher une conversation</span>
+                  <input id="conversation-search" type="search" placeholder="Rechercher un pseudo">
+                </label>
+                <div id="conversation-list" class="conversation-list">
+                  <div class="empty-state">Sélectionne un compte.</div>
+                </div>
+              </aside>
+              <section class="message-panel">
+                <div id="message-empty" class="message-empty">
+                  <div class="empty-symbol" aria-hidden="true">...</div>
+                  <h3>Aucune conversation ouverte</h3>
+                  <p>Choisis une conversation pour consulter son historique.</p>
+                </div>
+                <div id="message-view" class="message-view" hidden>
+                  <header class="message-header">
+                    <div>
+                      <h3 id="partner-name"></h3>
+                      <p id="partner-meta"></p>
+                    </div>
+                    <button id="ai-process-button" class="button primary" type="button">
+                      Répondre avec l'IA
+                    </button>
+                  </header>
+                  <div id="messages" class="messages"></div>
+                  <form id="reply-form" class="reply-form">
+                    <label class="sr-only" for="reply-input">Réponse manuelle</label>
+                    <textarea id="reply-input" rows="2" placeholder="Écrire une réponse..." required></textarea>
+                    <button type="submit" class="button primary">Envoyer</button>
+                  </form>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="view-conversations" class="view" hidden>
+            <div class="conversations-archive">
+              <aside class="conversations-archive-list-pane">
+                <div class="conversations-archive-toolbar">
+                  <select id="conversations-archive-platform" style="padding:4px 8px;border-radius:6px;border:1px solid #ccc;margin-right:8px;font-size:13px;"><option value="">Tous les sites</option><option value="chatnow">ChatNow</option><option value="omegleweb">OmegleWeb.com</option><option value="omegleweb.io">OmegleWeb.io</option><option value="chitchat.gg">Chitchat.gg</option><option value="chatiw.com">Chatiw.com</option><option value="whisperly.live">Whisperly.live</option><option value="gamma.example">gamma.example</option><option value="mignonne.com">Mignonne.com</option></select> <input id="conversations-archive-search" type="search" placeholder="Rechercher un pseudo ou compte…" autocomplete="off" />
+                  <div class="conversations-archive-actions">
+                    <button id="conversations-archive-refresh" type="button" class="button ghost">↻ Rafraîchir</button>
+                    <button id="conversations-archive-export" type="button" class="button secondary">⤓ Exporter (JSON)</button>
+                    <button id="conversations-archive-export-csv" type="button" class="button secondary">⤓ CSV</button>
+                  </div>
+                </div>
+                <p id="conversations-archive-count" class="conversations-archive-count"></p>
+                <ul id="conversations-archive-list" class="conversations-archive-list"></ul>
+              </aside>
+              <div id="conversations-archive-detail" class="conversations-archive-detail">
+                <p class="conversations-archive-empty">Sélectionne une conversation à gauche pour voir le transcript.</p>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-omegleweb" class="view" hidden></section>
+          <section id="view-blocked" class="view" hidden></section>
+          <section id="view-snapchat" class="view" hidden></section>
+          <section id="view-apikeys" class="view" hidden>
+            <div class="view-heading">
+              <div>
+                <h2>API Keys</h2>
+                <p>Les clés d'accès de tes assistants, puis les clés des fournisseurs IA du serveur. Une clé n'est jamais renvoyée au navigateur après sa création ou sa saisie.</p>
+              </div>
+            </div>
+            <div id="assistant-keys" class="apikeys-cards"></div>
+            <div id="apikeys-list" class="apikeys-cards"></div>
+          </section>
+        </main>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script type="module" src="/app.js?v=persona-en-2"></script>
+  
+
+</body>
+</html>

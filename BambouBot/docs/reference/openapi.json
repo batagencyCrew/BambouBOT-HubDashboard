@@ -1,0 +1,2460 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BambouAI — API d’intégration",
+    "version": "2026-10-04",
+    "description": "Contrat des routes d’intégration, presets, médias et conversations du dashboard. Trois accès distincts : la clé des extensions (X-Bambou-Extension-Key), la session du studio (cookie bambou_session) et les clés des assistants IA (Authorization: Bearer bbk_…, routes /api/assistant/*), créées et révoquées depuis Settings → API Keys. Les routes internes de supervision ne font pas partie de cette référence."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Cet espace BambouAI : le domaine d’où ce fichier est téléchargé"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Connexion"
+    },
+    {
+      "name": "Extensions"
+    },
+    {
+      "name": "Assistants",
+      "description": "Accès d’un assistant IA avec sa propre clé : lister les presets autorisés et générer des réponses."
+    },
+    {
+      "name": "Presets"
+    },
+    {
+      "name": "Médias"
+    },
+    {
+      "name": "Conversations"
+    },
+    {
+      "name": "Moteur IA"
+    },
+    {
+      "name": "Clés API",
+      "description": "Création, réglage, pause et révocation des clés d’assistant (session studio ; aussi dans Settings → API Keys)."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Connexion"
+        ],
+        "summary": "Vérifier la disponibilité",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service disponible",
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true,
+                  "service": "bambou-dashboard"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "tags": [
+          "Connexion"
+        ],
+        "summary": "Ouvrir une session du studio",
+        "description": "Utiliser la clé de connexion, pas la clé API des extensions. Le serveur retourne le cookie HttpOnly bambou_session, valable 12 heures côté navigateur. Les sessions sont en mémoire et sont perdues au redémarrage du serveur.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "example": {
+                "key": "VOTRE_CLE_DE_CONNEXION"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session ouverte ; conserver le cookie Set-Cookie",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "example": {
+                  "authenticated": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "Trop de tentatives de connexion : 5 échecs en 10 minutes pour une même adresse ; attendre Retry-After (toujours 600 secondes).",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session": {
+      "get": {
+        "tags": [
+          "Connexion"
+        ],
+        "summary": "Vérifier la session courante",
+        "description": "Retourne authenticated: false si le cookie est absent, expiré ou inconnu.",
+        "security": [
+          {},
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "État de session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "authenticated": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "tags": [
+          "Connexion"
+        ],
+        "summary": "Fermer la session courante",
+        "security": [
+          {},
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cookie et session invalidés",
+            "content": {
+              "application/json": {
+                "example": {
+                  "authenticated": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extension/config": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Lister les presets et Media Vaults disponibles",
+        "description": "Liste les presets et Media Vaults de cet espace (pas les comptes) et les réglages des extensions. Les presets archivés sont retournés sans marqueur : l’archivage masque le preset dans le studio sans modifier les intégrations existantes. Aucun paramètre de requête n’est lu.",
+        "security": [
+          {
+            "ExtensionKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listes des presets, vaults et réglages des extensions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "forceOpener": {
+                            "type": "boolean",
+                            "description": "Le preset impose son opener."
+                          }
+                        }
+                      }
+                    },
+                    "vaults": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "banAlertsEnabled": {
+                      "type": "boolean"
+                    },
+                    "banKeywords": {
+                      "type": "string"
+                    },
+                    "omegleSkipCountries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Codes pays en majuscules."
+                    },
+                    "omegleSkipMessages": {
+                      "type": "string"
+                    },
+                    "webhookOmegleCom": {
+                      "type": "string",
+                      "description": "URL de webhook, vide si non configurée. Secret : ne pas la transmettre à un tiers."
+                    },
+                    "webhookOmegleIo": {
+                      "type": "string",
+                      "description": "Idem."
+                    },
+                    "webhookChatnow": {
+                      "type": "string",
+                      "description": "Idem."
+                    },
+                    "wordReplacements": {
+                      "type": "string",
+                      "description": "Une règle par ligne : mot => remplacement."
+                    }
+                  }
+                },
+                "example": {
+                  "presets": [
+                    {
+                      "id": "1048",
+                      "name": "Mon preset",
+                      "forceOpener": false
+                    }
+                  ],
+                  "vaults": [
+                    {
+                      "id": "1001",
+                      "name": "Mon Media Vault"
+                    }
+                  ],
+                  "banAlertsEnabled": true,
+                  "banKeywords": "",
+                  "omegleSkipCountries": [
+                    "FR"
+                  ],
+                  "omegleSkipMessages": "",
+                  "wordReplacements": "",
+                  "webhookOmegleCom": "",
+                  "webhookOmegleIo": "",
+                  "webhookChatnow": ""
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedExtension"
+          }
+        }
+      }
+    },
+    "/api/extension/generate": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Générer une réponse avec un preset",
+        "description": "Génère la prochaine réplique du personnage défini par le preset ; ce n’est pas un chat généraliste. Le prompt vient du preset : les champs systemPrompt, model, temperature et maxTokens du corps sont ignorés (ils se règlent dans le moteur du studio). Les réponses sont courtes : 55 jetons au plus en conversation normale (60 pour une ouverture, jusqu’à 90 pour une objection, 180 pour un lien ou un finisher) ; un texte sans saut de ligne ni lien de plus de 105 caractères (115 hors français) ou de plus de deux signes de fin de phrase est réduit à sa première phrase. Un filtre à liste de formulations fixe (sans garantie) remplace par une réplique du personnage une phrase qui avoue être une IA ou ne pas avoir de photo. La réponse peut contenir le lien configuré du preset, une pièce jointe média et un ordre d’arrêt (stopConversation). Fournir l’historique à chaque requête : le serveur ne le recharge pas ; phase, cycle, objections et compteur d’échanges sont recalculés à partir des seuls messages envoyés. Seuls les 250 derniers messages sont utilisés. Corps JSON limité à 8 Mio. Archivage : la conversation n’est enregistrée que si accountId et userInfos.useridentifier sont tous deux fournis (sauf testOpener=true) ; le fichier est réécrit à chaque appel avec l’historique reçu. La génération utilise le moteur et les clés fournisseur configurés dans cet espace. Pour un assistant IA, utilise plutôt /api/assistant/generate avec une clé dédiée.",
+        "security": [
+          {
+            "ExtensionKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest"
+              },
+              "example": {
+                "presetId": "REMPLACER_PAR_ID_DU_PRESET",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Bonjour, comment vas-tu ?"
+                  }
+                ],
+                "userInfos": {
+                  "useridentifier": "contact-test-001",
+                  "username": "Test"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Résultat ; respecter stopConversation, même avec un contenu vide (voir son champ pour les cas)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResult"
+                },
+                "example": {
+                  "contentText": "Bonjour ! Je vais bien, merci.",
+                  "content": [
+                    {
+                      "type": "text",
+                      "content": "Bonjour ! Je vais bien, merci.",
+                      "delayMs": 1000
+                    }
+                  ],
+                  "messages": [
+                    "Bonjour ! Je vais bien, merci."
+                  ],
+                  "stopConversation": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedExtension"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/assistant/presets": {
+      "get": {
+        "tags": [
+          "Assistants"
+        ],
+        "summary": "Lister les presets utilisables par la clé",
+        "description": "Point de départ d’un assistant : les presets que cette clé peut utiliser, soit tous ceux de l’espace, soit seulement ceux cochés pour elle. Les presets archivés sont listés (archived: true) et restent utilisables. Seuls l’identifiant, le nom et la langue sont renvoyés ; le contenu des presets n’est pas exposé. Cette lecture ne consomme pas le quota de génération ; elle a sa propre limite fixe de 120 appels par minute et par clé.",
+        "security": [
+          {
+            "AssistantBearer": []
+          },
+          {
+            "AssistantKeyHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presets utilisables",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantPresets"
+                },
+                "example": {
+                  "presets": [
+                    {
+                      "id": "1048",
+                      "name": "Mon preset",
+                      "language": "French",
+                      "archived": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedAssistant"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenAssistant"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequestsAssistant"
+          }
+        }
+      }
+    },
+    "/api/assistant/generate": {
+      "post": {
+        "tags": [
+          "Assistants"
+        ],
+        "summary": "Générer une réponse avec un preset",
+        "description": "Génère la prochaine réplique du personnage défini par le preset choisi ; ce n’est pas un chat généraliste : le ton, la langue et les limites viennent du preset. Renvoie à chaque appel tout l’historique de la conversation : le serveur ne le garde pas, n’archive rien et ne réserve aucun contact. Les réponses sont courtes (quelques dizaines de mots). Un filtre remplace par une réplique du personnage les phrases qui avouent être une IA, un bot ou un robot, ou ne pas avoir de photo ou de corps : sa liste de formulations est fixe et ne donne aucune garantie (« assistant virtuel », « modèle de langage », « chatbot »… ne sont pas interceptés). La réponse peut contenir le lien configuré du preset et un ordre d’arrêt (stopConversation) ; elle ne contient jamais de média, et la requête n’accepte ni image ni pièce jointe. Aucun nouvel essai n’est fait après une erreur du moteur IA : 502 ou 504, puis réessaie plus tard (le message du fournisseur n’est jamais renvoyé) ; une même génération peut toutefois demander jusqu’à deux appels au moteur, sous le même délai. Un moteur qui répond dans le vide donne aussi 502. Prévois un délai client supérieur au délai du moteur (120 secondes par défaut). Corps limité à 256 Kio ; tout champ autre que presetId et messages est refusé (400). Quotas de la clé : par minute, simultanées et par jour UTC. Chaque requête acceptée compte dans la limite par minute ; le crédit du jour est rendu quand la requête est refusée avant toute génération (400, 403, 413), pour un preset inconnu (404) ou un moteur non configuré (503), mais pas après un échec du moteur (502, 504).",
+        "security": [
+          {
+            "AssistantBearer": []
+          },
+          {
+            "AssistantKeyHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantGenerationRequest"
+              },
+              "example": {
+                "presetId": "REMPLACER_PAR_ID_DU_PRESET",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Salut, ça va ?"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse du personnage ; respecter stopConversation, même avec un contenu vide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantGenerationResult"
+                },
+                "example": {
+                  "presetId": "1048",
+                  "contentText": "Salut ! Ça va et toi ?",
+                  "messages": [
+                    "Salut ! Ça va et toi ?"
+                  ],
+                  "content": [
+                    {
+                      "type": "text",
+                      "content": "Salut ! Ça va et toi ?",
+                      "delayMs": 1400
+                    }
+                  ],
+                  "stopConversation": false,
+                  "converted": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête refusée avant tout appel au moteur : JSON invalide, champ non pris en charge, presetId absent, historique vide ou trop long, rôle autre que user/assistant, message vide ou trop long, dernier message qui n’est pas user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le dernier message doit avoir le role \"user\"."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedAssistant"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenAssistant"
+          },
+          "404": {
+            "description": "Preset inconnu.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Preset inconnu."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Corps de plus de 256 Kio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Corps de requete trop grand (256 Kio maximum)."
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequestsAssistant"
+          },
+          "502": {
+            "description": "Le moteur IA a échoué, a répondu dans le vide ou est indisponible ; le détail reste dans le journal du serveur. Réessaie plus tard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le moteur IA est indisponible pour le moment. Reessaie dans quelques instants."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Le moteur IA n’est pas configuré sur ce serveur, ou le service est momentanément indisponible (registre des clés illisible côté serveur ; la réponse porte alors Retry-After: 5 et le message « Service momentanement indisponible. »).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le moteur IA n'est pas configure sur ce serveur."
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Le moteur n’a pas répondu dans son délai.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le moteur n'a pas repondu a temps. Reessaie."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/config": {
+      "get": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Lire la configuration complète du studio",
+        "description": "Inclut les presets, leurs archivedAt et les réglages de l’espace. Les clés fournisseur ne sont pas retournées en clair ; des indicateurs de configuration sont fournis.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configuration complète",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Enregistrer la configuration complète",
+        "description": "Ce PUT attend le document complet, pas une mise à jour partielle. Partir du GET le plus récent, modifier les champs voulus puis renvoyer l’ensemble. Les modifications concurrentes ne sont pas fusionnées automatiquement. Au moins un preset doit rester dans le document, y compris s’il est archivé. Maximum 100 presets ; corps limité à 1 Mio.",
+        "x-request-file": "studio-config.json",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configuration normalisée et enregistrée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/studio/presets/{presetId}/export": {
+      "get": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Exporter un preset",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PresetId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document d’export réimportable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Preset introuvable"
+          }
+        }
+      }
+    },
+    "/api/studio/presets/import": {
+      "post": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Importer un preset exporté",
+        "description": "Envoyer le document exporté, directement ou dans un champ payload. Le serveur ajoute un preset et gère les collisions d’identifiant. Limite : 4 Mio.",
+        "x-request-file": "preset-export.json",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configuration complète avec importedPresetId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/media/library": {
+      "get": {
+        "tags": [
+          "Médias"
+        ],
+        "summary": "Lire la bibliothèque de médias",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Media Vaults et médias de cet espace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/media/items/{itemId}/file": {
+      "get": {
+        "tags": [
+          "Médias"
+        ],
+        "summary": "Télécharger un fichier média",
+        "description": "Retourne le fichier binaire avec son type MIME. Supporte les plages HTTP Range.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant provenant de la bibliothèque."
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "example": "bytes=0-1023"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fichier complet",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Plage du fichier"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "416": {
+            "description": "Plage non satisfaisable"
+          }
+        }
+      }
+    },
+    "/api/media/public/{itemId}/file": {
+      "get": {
+        "tags": [
+          "Médias"
+        ],
+        "summary": "Télécharger un média joint à une réponse",
+        "description": "Lien signé retourné dans content[].content et dans media par la génération. Il s’utilise tel quel, sans clé ni session ; le paramètre token, sans date d’expiration, fait foi. Le préfixe du lien reprend l’hôte de la requête de génération. Quiconque possède le lien obtient le fichier.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fichier média",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Lien média invalide (token incorrect)"
+          },
+          "404": {
+            "description": "Média introuvable"
+          }
+        }
+      }
+    },
+    "/api/conversations/archive": {
+      "get": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Lister les conversations enregistrées",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 200
+            },
+            "description": "Nombre de conversations demandé (200 par défaut, 1000 au maximum). Au plus 8000 fichiers sont examinés pour appliquer le filtre platform : un filtre rare peut renvoyer moins de résultats que demandé."
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filtre plateforme, ou identifiant de compte selon le classement du serveur."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liste récente avec compteurs",
+            "content": {
+              "application/json": {
+                "example": {
+                  "conversations": [],
+                  "total": 0,
+                  "allTotal": 0,
+                  "limited": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/conversations/archive/{accountId}/{partnerId}": {
+      "get": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Lire une conversation enregistrée",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "partnerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation complète",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Conversation introuvable"
+          }
+        }
+      }
+    },
+    "/api/conversations/export": {
+      "get": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Exporter les conversations",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "presetId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Export JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "example": {
+                  "exportedAt": "2026-09-25T00:00:00.000Z",
+                  "count": 0,
+                  "conversations": []
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/studio/engine-key": {
+      "put": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Configurer la clé du fournisseur IA principal",
+        "description": "Enregistre la clé du moteur actif, dans le fichier du fournisseur dont l’hôte correspond à l’URL du moteur configuré (une clé par fournisseur). Pour la clé d’un autre fournisseur du catalogue, utiliser PUT /api/studio/engine-profile-key avec {\"id\":\"<profil>\",\"key\":\"...\"}. Il ne s’agit pas de la clé API BambouAI.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "example": {
+                "key": "VOTRE_CLE_FOURNISSEUR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clé enregistrée",
+            "content": {
+              "application/json": {
+                "example": {
+                  "configured": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Clé de moins de 12 caractères, ou contenant un espace, un saut de ligne ou un caractère non ASCII."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/studio/vision-key": {
+      "put": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Configurer la clé Vision et transcription",
+        "description": "Clé fournisseur d’au moins 12 caractères.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "example": {
+                "key": "VOTRE_CLE_FOURNISSEUR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clé enregistrée",
+            "content": {
+              "application/json": {
+                "example": {
+                  "configured": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Clé trop courte"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/studio/haiku-key": {
+      "put": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Configurer la clé du moteur de secours",
+        "description": "Clé fournisseur d’au moins 12 caractères.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "example": {
+                "key": "VOTRE_CLE_FOURNISSEUR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clé enregistrée",
+            "content": {
+              "application/json": {
+                "example": {
+                  "configured": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Clé trop courte"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/studio/engine-test": {
+      "post": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Tester la connexion au moteur configuré",
+        "description": "Effectue un appel au fournisseur ; il peut être facturé par celui-ci.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Résultat du test du fournisseur",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/studio/engine-profiles": {
+      "get": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Lister les moteurs IA du catalogue",
+        "description": "Catalogue des moteurs : identifiant, libellé, fournisseur, URL, modèle, présence d’une clé, et identifiant du moteur actif (activeId).",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalogue et moteur actif",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "activeId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "baseUrl": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "keyConfigured": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/studio/engine-profile": {
+      "put": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Activer un moteur du catalogue",
+        "description": "Bascule fournisseur, URL et modèle sur le moteur choisi, après un test de connexion : si le test échoue, le moteur actuel est conservé. Renvoie la configuration du studio.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Identifiant du moteur (champ id du catalogue)."
+                  }
+                }
+              },
+              "example": {
+                "id": "REMPLACER_PAR_ID_DU_MOTEUR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moteur activé ; configuration du studio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Profil moteur inconnu.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Profil moteur inconnu."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Aucune clé enregistrée pour ce moteur : la coller d’abord.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Le moteur visé ne répond pas ; le moteur actuel est conservé.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/engine-profile-key": {
+      "put": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Enregistrer la clé d’un moteur du catalogue",
+        "description": "Enregistre la clé du fournisseur d’un moteur du catalogue, sans l’activer. Il ne s’agit pas de la clé API BambouAI.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "key"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "id": "REMPLACER_PAR_ID_DU_MOTEUR",
+                "key": "VOTRE_CLE_FOURNISSEUR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clé enregistrée",
+            "content": {
+              "application/json": {
+                "example": {
+                  "configured": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Clé trop courte ou contenant des espaces ou sauts de ligne.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Profil moteur inconnu.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Profil moteur inconnu."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/generate": {
+      "post": {
+        "tags": [
+          "Moteur IA"
+        ],
+        "summary": "Générer depuis une session du studio",
+        "description": "Génération du Playground avec les mêmes champs de base que /api/extension/generate. Corps limité à 8 Mio. Cette route n’effectue pas l’archivage de conversation propre à la route extension.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest"
+              },
+              "example": {
+                "presetId": "REMPLACER_PAR_ID_DU_PRESET",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Bonjour !"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Résultat de génération",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/studio/api-keys": {
+      "get": {
+        "tags": [
+          "Clés API"
+        ],
+        "summary": "Lister les clés d’assistant",
+        "description": "Toutes les clés, révoquées comprises, sans jamais renvoyer la clé ni son empreinte. Les compteurs d’usage (appels, dernière utilisation, générations du jour) sont remis à zéro à chaque redémarrage du serveur.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clés connues",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiKey"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "keys": [
+                    {
+                      "id": "ak_4e392d3ede",
+                      "label": "Assistant de Michel",
+                      "hint": "mD9A",
+                      "createdAt": "2026-10-04T02:44:17.000Z",
+                      "rpm": 20,
+                      "maxConcurrent": 2,
+                      "dailyLimit": 1000,
+                      "presetIds": [],
+                      "disabled": false,
+                      "revokedAt": null,
+                      "lastUsedAt": null,
+                      "callsSinceStart": 0,
+                      "callsToday": 0
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Clés API"
+        ],
+        "summary": "Créer une clé d’assistant",
+        "description": "Crée une clé bbk_… pour un assistant. La clé en clair n’est renvoyée que dans cette réponse : le serveur n’en garde que l’empreinte. Au plus 50 clés actives. Limites par défaut : 20 générations par minute, 2 simultanées, 1 000 par jour UTC, tous les presets.",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              },
+              "example": {
+                "label": "Assistant de Michel",
+                "rpm": 20,
+                "maxConcurrent": 2,
+                "dailyLimit": 1000,
+                "presetIds": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Clé créée ; copier key maintenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                },
+                "example": {
+                  "id": "ak_4e392d3ede",
+                  "label": "Assistant de Michel",
+                  "hint": "mD9A",
+                  "createdAt": "2026-10-04T02:44:17.000Z",
+                  "rpm": 20,
+                  "maxConcurrent": 2,
+                  "dailyLimit": 1000,
+                  "presetIds": [],
+                  "disabled": false,
+                  "revokedAt": null,
+                  "lastUsedAt": null,
+                  "callsSinceStart": 0,
+                  "callsToday": 0,
+                  "key": "bbk_VOTRE_CLE_AFFICHEE_UNE_SEULE_FOIS"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Corps qui n’est pas un objet JSON valide, nom ou limite invalide, preset inconnu, ou 50 clés actives atteintes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Preset inconnu : 9999."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "description": "Corps de plus de 8 Kio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Corps de requete trop grand (8 Kio maximum)."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Le registre des clés (data/api-keys.json) est illisible côté serveur ; rien n’a été écrasé. Le détail est dans le journal du serveur.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le registre des cles a echoue (voir le journal du serveur ; data/api-keys.json illisible ?)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/api-keys/{keyId}": {
+      "patch": {
+        "tags": [
+          "Clés API"
+        ],
+        "summary": "Modifier, mettre en pause ou reprendre une clé",
+        "description": "Change le nom, les limites, les presets autorisés ou l’état de pause. Effet immédiat sur les appels suivants. Une clé révoquée ne peut plus être modifiée (400).",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "keyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant de la clé (champ id, ak_…)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyUpdate"
+              },
+              "example": {
+                "disabled": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clé mise à jour",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                },
+                "example": {
+                  "id": "ak_4e392d3ede",
+                  "label": "Assistant de Michel",
+                  "hint": "mD9A",
+                  "createdAt": "2026-10-04T02:44:17.000Z",
+                  "rpm": 20,
+                  "maxConcurrent": 2,
+                  "dailyLimit": 1000,
+                  "presetIds": [],
+                  "disabled": true,
+                  "revokedAt": null,
+                  "lastUsedAt": null,
+                  "callsSinceStart": 0,
+                  "callsToday": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Corps qui n’est pas un objet JSON valide, valeur invalide, preset inconnu, ou clé révoquée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "rpm doit etre un entier entre 1 et 600."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Clé inconnue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Cle API inconnue."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Corps de plus de 8 Kio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Corps de requete trop grand (8 Kio maximum)."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Le registre des clés est illisible côté serveur.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Le registre des cles a echoue (voir le journal du serveur ; data/api-keys.json illisible ?)."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Clés API"
+        ],
+        "summary": "Révoquer une clé",
+        "description": "Révocation immédiate et définitive : les appels suivants de cette clé reçoivent 401, et il n’existe aucun moyen de la réactiver ; pour la remplacer, crée une nouvelle clé. Pour couper temporairement, utilise la pause (PATCH avec disabled: true).",
+        "security": [
+          {
+            "StudioSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "keyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant de la clé (champ id, ak_…)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clé révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                },
+                "example": {
+                  "id": "ak_4e392d3ede",
+                  "label": "Assistant de Michel",
+                  "hint": "mD9A",
+                  "createdAt": "2026-10-04T02:44:17.000Z",
+                  "rpm": 20,
+                  "maxConcurrent": 2,
+                  "dailyLimit": 1000,
+                  "presetIds": [],
+                  "disabled": false,
+                  "revokedAt": "2026-10-04T03:00:00.000Z",
+                  "lastUsedAt": null,
+                  "callsSinceStart": 0,
+                  "callsToday": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Clé inconnue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Cle API inconnue."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ExtensionKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Bambou-Extension-Key",
+        "description": "Clé API de l’espace, envoyée dans X-Bambou-Extension-Key. Il n’y a qu’une clé par espace : elle est partagée par les extensions et les workers et fournie par l’administrateur de l’espace (elle n’est pas visible dans le studio). Elle ouvre aussi des routes internes des extensions qui ne sont pas documentées ici : ne la confie pas à un assistant ou à un tiers, crée-lui une clé dédiée (voir AssistantBearer). Authorization: Bearer n’est pas pris en charge pour ces routes."
+      },
+      "StudioSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "bambou_session",
+        "description": "Cookie obtenu par POST /api/login avec la clé de connexion."
+      },
+      "AssistantBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "bbk_…",
+        "description": "Clé d’assistant (préfixe bbk_), créée dans Settings → API Keys → Clés pour assistants et affichée une seule fois. Envoyée dans Authorization: Bearer <clé>. Ne fonctionne que sur /api/assistant/*."
+      },
+      "AssistantKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Bambou-Api-Key",
+        "description": "Équivalent de Authorization: Bearer pour les clients qui ne savent pas poser ce en-tête."
+      }
+    },
+    "parameters": {
+      "PresetId": {
+        "name": "presetId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Identifiant de preset retourné par la configuration.",
+        "example": "1048"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Clé API invalide ou session absente/expirée, selon la route",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Authentification requise."
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "Erreur JSON. Plusieurs erreurs de validation et de configuration remontent actuellement en 500 ; les délais du moteur peuvent remonter en 504. Lire le champ error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UnauthorizedExtension": {
+        "description": "Clé API absente ou invalide",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Cle extension invalide."
+            }
+          }
+        }
+      },
+      "UnauthorizedAssistant": {
+        "description": "Clé absente, inconnue, mal formée ou révoquée (le message ne dit pas laquelle). L’en-tête WWW-Authenticate: Bearer realm=\"bambouai\" accompagne la réponse. La clé des extensions n’est jamais acceptée ici.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Cle API invalide, revoquee ou absente."
+            }
+          }
+        },
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ForbiddenAssistant": {
+        "description": "Clé en pause (« Cette cle est en pause. »), ou preset non autorisé pour cette clé (« Ce preset n'est pas autorise pour cette cle. »). Une clé en pause reprend dès que son propriétaire la réactive.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Cette cle est en pause."
+            }
+          }
+        }
+      },
+      "TooManyRequestsAssistant": {
+        "description": "Quota de la clé atteint (par minute, générations simultanées ou par jour UTC ; la lecture des presets a sa propre limite fixe de 120 appels par minute), ou trop de clés invalides depuis la même adresse (30 en 10 minutes). Attendre le nombre de secondes de Retry-After.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Limite de 20 requetes par minute atteinte pour cette cle."
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "Secondes à attendre avant de réessayer.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "Secret": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "La clé attendue par cette route."
+          }
+        }
+      },
+      "GenerationRequest": {
+        "type": "object",
+        "required": [
+          "presetId",
+          "messages"
+        ],
+        "properties": {
+          "presetId": {
+            "type": "string",
+            "description": "Identifiant exact d’un preset de cet espace, à recopier depuis /api/extension/config. Chaîne JSON obligatoire (\"1048\", pas 1048) ; un nombre, un identifiant absent ou inconnu donne « Preset inconnu. » (HTTP 500)."
+          },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Historique chronologique. Chaque message a un role égal à user ou assistant (tout autre rôle, system compris, fait échouer toute la requête) et un contenu non vide de 5 000 caractères au plus (hors image envoyée par l’utilisateur). Un seul message invalide rejette la requête entière (HTTP 500, error = « Message Playground invalide. »). Un tableau absent, vide ou sans message exploitable donne « Historique Playground invalide. ». Au-delà de 250 messages, seuls les 250 derniers sont utilisés. Un message assistant de type image est ignoré. Termine l’historique par le message user auquel répondre.",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Chaîne. Le serveur accepte aussi une liste de parties {\"type\":\"text\",\"text\":\"...\"} ou {\"type\":\"image_url\",\"image_url\":{\"url\":\"...\"}}, et un message user peut porter une image (imageUrl, mediaUrl, url, imageUrls, attachments, ou type \"image\" avec l’URL dans content). URL acceptées : data:image/...;base64,..., lien http(s) se terminant par .png, .jpg, .jpeg, .webp ou .gif, ou lien /api/media/public/<id>/file ; 4 images au plus par message. L’image est résumée par OpenAI Vision (réglage « Analyse images OpenAI » et clé Vision requis) ; si l’analyse échoue, la réponse est quand même générée. Les messages à contenu en liste ne sont pas archivés."
+                },
+                "timestamp": {
+                  "type": "number",
+                  "description": "Facultatif, en secondes Unix (pas en millisecondes). Une valeur non numérique est ignorée."
+                }
+              }
+            }
+          },
+          "accountId": {
+            "type": "string",
+            "description": "Identifiant d’un compte configuré dans le studio (la liste se lit avec GET /api/studio/config, session studio ; /api/extension/config ne la retourne pas). Un identifiant inconnu est ignoré sans erreur. S’il correspond à un compte ayant une ville, cette ville remplace celle du preset, sauf si le preset désactive la localisation du compte. Associé à userInfos.useridentifier, il active l’archivage de la conversation et, si le preset définit un délai multi-comptes, la réservation du contact. Pour un test ou un assistant, omettre ce champ."
+          },
+          "userInfos": {
+            "type": "object",
+            "description": "Métadonnées du contact, facultatives. Pour un test, omets cet objet : aucun compteur, aucune réservation et aucune archive ne sont alors modifiés.",
+            "properties": {
+              "useridentifier": {
+                "type": "string",
+                "description": "Identifiant stable du contact. Sur un échange normal il sert à attribuer et compter un handle Snapchat (si le preset a un lien snap), à réserver le contact pour le compte (avec accountId, déduplication multi-comptes) et à nommer l’archive (avec accountId). N’utilise jamais d’identifiant fictif dans un espace en production."
+              },
+              "username": {
+                "type": "string",
+                "description": "Nom d’affichage."
+              }
+            },
+            "additionalProperties": true
+          },
+          "platform": {
+            "type": "string",
+            "description": "Contexte de plateforme ; la route extension utilise OmegleWeb si omis. Texte libre, non validé."
+          },
+          "mediaVaultId": {
+            "type": "string",
+            "description": "Chaîne. Remplace le vault du preset pour cet appel ; omettre pour garder son réglage, chaîne vide pour aucun vault. Une valeur qui n’est pas une chaîne est ignorée ; un identifiant inexistant ne renvoie simplement aucun média ; un identifiant hors [a-z0-9-] donne « Media Vault invalide. » (HTTP 500)."
+          },
+          "testOpener": {
+            "type": "boolean",
+            "default": false,
+            "description": "Demande seulement le message d’ouverture (opener) du preset, sans répondre à messages ; messages doit tout de même contenir un message valide. Toute valeur vraie active le mode (la chaîne \"false\" aussi). Erreur 500 « Aucun opener actif dans ce preset. » si le preset n’en a pas. N’archive pas, ne réserve pas le contact et ne compte pas de handle Snap. Ne pas l’utiliser pour un échange normal."
+          },
+          "site": {
+            "type": "string",
+            "description": "Site de la conversation pour le classement de l’archive : omegleweb.com, omegleweb.io, chatnow, chitchat.gg, chatiw.com, whisperly.live, gamma.example ou mignonne.com (alias courts acceptés). Sans site, platform est utilisé s’il est reconnu ; sinon le classement se déduit de l’identifiant du compte et vaut chatnow par défaut. Le défaut OmegleWeb de platform ne s’applique pas à ce classement."
+          },
+          "disclosedAi": {
+            "type": "boolean",
+            "default": false,
+            "description": "Seule la valeur booléenne true l’active (la chaîne \"true\" est ignorée). La réponse n’incarne plus le personnage du preset : le moteur répond en annonçant qu’il est une IA, sans CTA, objections ni finisher. La déduplication, le routage Snap et les signaux d’arrêt s’exécutent avant : un signal d’arrêt renvoie la réponse fixe du personnage. Le format de la réponse peut différer ; lire content."
+          }
+        }
+      },
+      "GenerationResult": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "contentText": {
+            "type": "string",
+            "description": "Version texte de la réponse ; peut être vide."
+          },
+          "content": {
+            "type": "array",
+            "description": "Éléments à envoyer dans l’ordre. type vaut text, ou image, audio ou video pour une pièce jointe ; content est le texte ou l’URL du média ; delayMs est la pause de frappe conseillée avant l’élément (650 à 4200 ms pour du texte, 900 ms pour un média) ; un média porte aussi mediaPool, disappearing et itemId. contentItems est une copie de content ; messages ne contient que les bulles de texte (8 au plus) ; contentText les joint par des retours à la ligne.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "delayMs": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "contentItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stopConversation": {
+            "type": "boolean",
+            "description": "true quand le preset ferme la conversation avec ce contact : ne plus lui répondre. Cas : (1) contact déjà réservé par un autre compte du même preset, content vide, statistics.dedup = true et debug.skipped = \"multi_account_dedup\" ; (2) conversation déjà close, content vide, debug.stoppedBeforeGeneration = true ; (3) message de clôture, content non vide à envoyer, puis arrêt ; (4) objection configurée avec arrêt après réponse. Envoie le contenu s’il y en a, puis cesse. Un 200 avec content vide n’est pas une panne. Le finisher ne positionne jamais stopConversation : c’est à l’appelant de s’arrêter."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "description": "Durée cumulée des appels au moteur, en secondes. Absent des réponses d’arrêt sans moteur (signal d’arrêt) ; 0, avec un model vide, dans le cas de la déduplication."
+          },
+          "model": {
+            "type": "string",
+            "description": "Modèle réellement utilisé ; il peut différer du réglage si le moteur de secours a pris le relais."
+          },
+          "media": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL signée du média joint, téléchargeable sans clé (voir /api/media/public/{itemId}/file), ou null. Vaut [] dans le cas de la déduplication."
+          },
+          "converted": {
+            "type": "boolean",
+            "description": "true uniquement quand l’interlocuteur indique avoir rejoint après l’envoi du lien du preset (signal de conversion) ; la réponse porte alors stopConversation: true. false sinon."
+          },
+          "underage": {
+            "type": "boolean",
+            "description": "Toujours false : le serveur ne détecte pas les mineurs."
+          },
+          "statistics": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Indicateurs de la conversation (phase, échanges, ville, lien partagé). Informatif."
+          },
+          "debug": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Détails internes (moteur, phase, objection, lien, résumés d’images). Informatif : ne pas en dépendre."
+          }
+        }
+      },
+      "StudioConfig": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Document complet du studio. Le schéma présente les champs utiles à l’archivage ; conserver également tous les autres champs renvoyés par GET.",
+        "required": [
+          "presets",
+          "accounts"
+        ],
+        "properties": {
+          "presets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "archivedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "nullable": true,
+                  "description": "Date ISO d’archivage, ou null pour restaurer. Champ facultatif."
+                }
+              }
+            }
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "engine": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "AssistantGenerationRequest": {
+        "type": "object",
+        "required": [
+          "presetId",
+          "messages"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "presetId": {
+            "type": "string",
+            "description": "Identifiant d’un preset, lu avec GET /api/assistant/presets (chaîne de 1 à 64 caractères parmi lettres, chiffres, _ et -). Un preset hors de la liste autorisée de la clé donne 403, y compris un identifiant inexistant quand la clé est limitée à certains presets ; un identifiant inexistant donne 404 pour une clé qui a accès à tous les presets, ou si le preset autorisé a été supprimé."
+          },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 40,
+            "description": "Historique complet de la conversation, du plus ancien au plus récent : le serveur n’en garde aucun, il faut le renvoyer à chaque appel. 40 messages au plus, 2 000 caractères par message, 30 000 au total (comptés en unités UTF-16 : un emoji en vaut 2) ; le dernier message doit avoir le rôle user. Texte seul.",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "description": "user : la personne à qui le personnage répond ; assistant : ce que le personnage a déjà dit. Le rôle system est refusé."
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "description": "Texte du message, non vide."
+                }
+              }
+            }
+          }
+        }
+      },
+      "AssistantGenerationResult": {
+        "type": "object",
+        "properties": {
+          "presetId": {
+            "type": "string",
+            "description": "Le preset utilisé."
+          },
+          "contentText": {
+            "type": "string",
+            "description": "La réponse en texte (les bulles jointes par des retours à la ligne) ; peut être vide si stopConversation vaut true."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Les bulles de la réponse, une par élément, dans l’ordre d’envoi."
+          },
+          "content": {
+            "type": "array",
+            "description": "Les mêmes bulles avec la pause de frappe conseillée.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Toujours text pour un assistant."
+                },
+                "content": {
+                  "type": "string"
+                },
+                "delayMs": {
+                  "type": "number",
+                  "description": "Pause conseillée avant d’afficher la bulle, en millisecondes."
+                }
+              }
+            }
+          },
+          "stopConversation": {
+            "type": "boolean",
+            "description": "true : le preset clôt la conversation avec ce contact ; envoie le contenu s’il y en a, puis cesse de répondre. Un 200 avec un contenu vide n’est pas une panne."
+          },
+          "converted": {
+            "type": "boolean",
+            "description": "true uniquement quand l’interlocuteur indique avoir rejoint après l’envoi du lien du preset (signal de conversion) ; la réponse porte alors aussi stopConversation: true. false dans tous les autres cas, y compris quand le lien vient d’être envoyé."
+          }
+        }
+      },
+      "AssistantPresets": {
+        "type": "object",
+        "properties": {
+          "presets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "À copier dans presetId."
+                },
+                "name": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string",
+                  "description": "Langue de réponse du preset, par exemple French ou English."
+                },
+                "archived": {
+                  "type": "boolean",
+                  "description": "true : le preset est archivé dans le studio ; il reste utilisable."
+                }
+              }
+            }
+          }
+        }
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifiant de la clé (ak_…), à utiliser dans /api/studio/api-keys/{keyId}. Ce n’est pas la clé."
+          },
+          "label": {
+            "type": "string",
+            "description": "Nom donné à la clé (qui s’en sert), 60 caractères au plus."
+          },
+          "hint": {
+            "type": "string",
+            "description": "Les 4 derniers caractères de la clé, pour la reconnaître. Le serveur ne garde que son empreinte."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rpm": {
+            "type": "integer",
+            "description": "Générations par minute (1 à 600 ; 20 par défaut)."
+          },
+          "maxConcurrent": {
+            "type": "integer",
+            "description": "Générations simultanées (1 à 8 ; 2 par défaut)."
+          },
+          "dailyLimit": {
+            "type": "integer",
+            "description": "Générations par jour UTC (1 à 100 000 ; 1 000 par défaut)."
+          },
+          "presetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Presets autorisés ; liste vide = tous les presets, y compris ceux créés plus tard."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "true : clé en pause, ses appels reçoivent 403."
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Date de révocation, définitive ; null tant que la clé est valable."
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Dernier appel depuis le démarrage du serveur ; null sinon."
+          },
+          "callsSinceStart": {
+            "type": "integer",
+            "description": "Appels (presets et génération) depuis le démarrage du serveur ; remis à zéro à chaque redémarrage."
+          },
+          "callsToday": {
+            "type": "integer",
+            "description": "Générations comptées aujourd’hui (jour UTC) ; remis à zéro à minuit UTC et au redémarrage."
+          }
+        }
+      },
+      "ApiKeyCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifiant de la clé (ak_…), à utiliser dans /api/studio/api-keys/{keyId}. Ce n’est pas la clé."
+          },
+          "label": {
+            "type": "string",
+            "description": "Nom donné à la clé (qui s’en sert), 60 caractères au plus."
+          },
+          "hint": {
+            "type": "string",
+            "description": "Les 4 derniers caractères de la clé, pour la reconnaître. Le serveur ne garde que son empreinte."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rpm": {
+            "type": "integer",
+            "description": "Générations par minute (1 à 600 ; 20 par défaut)."
+          },
+          "maxConcurrent": {
+            "type": "integer",
+            "description": "Générations simultanées (1 à 8 ; 2 par défaut)."
+          },
+          "dailyLimit": {
+            "type": "integer",
+            "description": "Générations par jour UTC (1 à 100 000 ; 1 000 par défaut)."
+          },
+          "presetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Presets autorisés ; liste vide = tous les presets, y compris ceux créés plus tard."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "true : clé en pause, ses appels reçoivent 403."
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Date de révocation, définitive ; null tant que la clé est valable."
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Dernier appel depuis le démarrage du serveur ; null sinon."
+          },
+          "callsSinceStart": {
+            "type": "integer",
+            "description": "Appels (presets et génération) depuis le démarrage du serveur ; remis à zéro à chaque redémarrage."
+          },
+          "callsToday": {
+            "type": "integer",
+            "description": "Générations comptées aujourd’hui (jour UTC) ; remis à zéro à minuit UTC et au redémarrage."
+          },
+          "key": {
+            "type": "string",
+            "description": "La clé en clair (bbk_…). Renvoyée uniquement par cette réponse : copie-la tout de suite, elle ne pourra plus être relue."
+          }
+        }
+      },
+      "ApiKeyCreate": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Nom de la clé, 60 caractères au plus."
+          },
+          "rpm": {
+            "type": "integer",
+            "description": "Générations par minute (1 à 600 ; 20 par défaut)."
+          },
+          "maxConcurrent": {
+            "type": "integer",
+            "description": "Générations simultanées (1 à 8 ; 2 par défaut)."
+          },
+          "dailyLimit": {
+            "type": "integer",
+            "description": "Générations par jour UTC (1 à 100 000 ; 1 000 par défaut)."
+          },
+          "presetIds": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Identifiants de presets existants ; liste vide ou absente = tous les presets. Un identifiant inconnu donne 400."
+          }
+        }
+      },
+      "ApiKeyUpdate": {
+        "type": "object",
+        "description": "Seuls les champs envoyés changent.",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Nom de la clé, 60 caractères au plus."
+          },
+          "rpm": {
+            "type": "integer",
+            "description": "Générations par minute (1 à 600 ; 20 par défaut)."
+          },
+          "maxConcurrent": {
+            "type": "integer",
+            "description": "Générations simultanées (1 à 8 ; 2 par défaut)."
+          },
+          "dailyLimit": {
+            "type": "integer",
+            "description": "Générations par jour UTC (1 à 100 000 ; 1 000 par défaut)."
+          },
+          "presetIds": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Identifiants de presets existants. Champ absent : la liste actuelle est conservée. Liste vide : la clé accède à tous les presets. Un identifiant inconnu donne 400."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "true met la clé en pause, false la reprend."
+          }
+        }
+      }
+    }
+  }
+}

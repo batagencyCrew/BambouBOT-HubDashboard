@@ -1,0 +1,90 @@
+# BambouAI — complete route inventory (bambouaibot.com)
+# Recovered 2026-10-18 from the official contract (/openapi.json, v2026-10-04)
+# + the dashboard bundle (/app.js, md5 617d54cc0548ffb806f87e49036ca5e2).
+# [OPENAPI] = documented in the public contract.  [BUNDLE] = internal supervision
+# route used by the dashboard, same session cookie, not in the public contract.
+#
+# Auth modes:
+#   session  = studio session cookie "bambou_session" (POST /api/login)
+#   ext      = X-Bambou-Extension-Key header
+#   bbk      = Authorization: Bearer bbk_... (or X-Bambou-Assistant-Key)
+#   -        = no auth
+
+GET     /health                                          [-]        [OPENAPI]  service probe -> {ok, service:"bambou-dashboard"}
+POST    /api/login                                       [-]        [OPENAPI]  {"key":"<login key>"} -> Set-Cookie bambou_session (12h)
+GET     /api/session                                     [session]  [OPENAPI]  {authenticated: bool}
+POST    /api/logout                                      [session]  [OPENAPI]  drop session
+
+# --- Extensions (extension key) -------------------------------------------------
+GET     /api/extension/config                            [ext]      [OPENAPI]  presets/vaults/ban keywords/webhooks for the browser extension
+POST    /api/extension/generate                          [ext]      [OPENAPI]  {presetId:"<string>", messages:[...]} -> generation
+
+# --- Assistants (assistant key bbk_...) -----------------------------------------
+GET     /api/assistant/presets                           [bbk]      [OPENAPI]  presets allowed for this key
+POST    /api/assistant/generate                          [bbk]      [OPENAPI]  {presetId, messages[]} -> {reply,...}; stateless, full history each call
+
+# --- Presets & studio config (session) ------------------------------------------
+GET     /api/studio/config                               [session]  [OPENAPI]  full studio document (presets, accounts, engine, snapchat, extension, abbreviations)
+PUT     /api/studio/config                               [session]  [OPENAPI]  full document replace (NOT a patch); <=1 MiB; 1..100 presets
+GET     /api/studio/presets/{presetId}/export            [session]  [OPENAPI]  re-importable preset export
+POST    /api/studio/presets/import                       [session]  [OPENAPI]  body = export doc or {payload:<export doc>}; assigns new id on collision
+POST    /api/studio/presets/{presetId}/import-section    [session]  [BUNDLE]   {section:"urls", payload:{format:"bambouai-section",version:1,section,fromPreset,modules}}
+
+# --- API keys (session) ----------------------------------------------------------
+GET     /api/studio/api-keys                             [session]  [OPENAPI]  {keys:[ApiKey,...]} (no secrets)
+POST    /api/studio/api-keys                             [session]  [OPENAPI]  {label,rpm?,maxConcurrent?,dailyLimit?,presetIds?} -> 201 with key shown ONCE
+PATCH   /api/studio/api-keys/{keyId}                     [session]  [OPENAPI]  partial update (label/limits/presetIds/disabled)
+DELETE  /api/studio/api-keys/{keyId}                     [session]  [OPENAPI]  revoke (final)
+
+# --- AI engine (session) ----------------------------------------------------------
+GET     /api/studio/engine-profiles                      [session]  [OPENAPI]  provider catalog + which are configured
+PUT     /api/studio/engine-profile                       [session]  [OPENAPI]  {id} select active engine profile
+PUT     /api/studio/engine-profile-key                   [session]  [OPENAPI]  {id,key} set provider key for a profile
+PUT     /api/studio/engine-key                           [session]  [OPENAPI]  {key} legacy engine key (current provider)
+PUT     /api/studio/vision-key                           [session]  [OPENAPI]  {key} vision (image description) key
+PUT     /api/studio/haiku-key                            [session]  [OPENAPI]  {key} fallback model key
+PUT     /api/studio/ollama-key                           [session]  [BUNDLE]   {key} Ollama key
+POST    /api/studio/ollama-models                        [session]  [BUNDLE]   list remote Ollama models
+POST    /api/studio/engine-test                          [session]  [OPENAPI]  probe engine connectivity
+POST    /api/studio/generate                             [session]  [OPENAPI]  playground generation {presetId, messages[]}
+
+# --- Media vaults (session) -------------------------------------------------------
+GET     /api/media/library                               [session]  [OPENAPI]  {vaults:[{id,name,days:[...],items:[...]}]}
+POST    /api/media/vaults                                [session]  [BUNDLE]   {name} create vault
+PATCH   /api/media/vaults/{vaultId}                      [session]  [BUNDLE]   {name} rename vault
+DELETE  /api/media/vaults/{vaultId}                      [session]  [BUNDLE]   delete vault
+POST    /api/media/days                                  [session]  [BUNDLE]   {vaultId,name} create day/outfit
+POST    /api/media/items                                 [session]  [BUNDLE]   {vaultId,dayId,category,context,fileName,mimeType,data(dataURL)}
+PATCH   /api/media/items/{itemId}                        [session]  [BUNDLE]   {overlay:{text,preset,y,fontSize},description,disappearing}
+DELETE  /api/media/items/{itemId}                        [session]  [BUNDLE]   delete item
+GET     /api/media/items/{itemId}/file                   [session]  [OPENAPI]  raw file bytes
+GET     /api/media/public/{itemId}/file                  [-]        [OPENAPI]  public variant used from chat pages
+
+# --- Conversations (session) ------------------------------------------------------
+GET     /api/conversations/archive                       [session]  [OPENAPI]  list archived conversations
+GET     /api/conversations/archive/{accountId}/{partnerId} [session][OPENAPI]  one conversation
+GET     /api/conversations/export                        [session]  [OPENAPI]  {conversations:[...]} bulk export
+
+# --- Live supervision (session, internal) -----------------------------------------
+GET     /api/dashboard                                   [session]  [BUNDLE]   live worker/account report
+POST    /api/accounts                                    [session]  [BUNDLE]   create ChatNow account (name,presetId,proxy,recreate...,worker start)
+GET     /api/accounts/{accountId}                        [session]  [BUNDLE]   account detail
+POST    /api/accounts/{accountId}                        [session]  [BUNDLE]   update account
+DELETE  /api/accounts/{accountId}                        [session]  [BUNDLE]   delete account
+POST    /api/accounts/{accountId}/session/export         [session]  [BUNDLE]   export AdsPower session
+GET     /api/accounts/{accountId}/conversations          [session]  [BUNDLE]   live conversations of one account
+GET     /api/mailboxes                                   [session]  [BUNDLE]   mailbox pool
+POST    /api/mailboxes/import                            [session]  [BUNDLE]   {text:"email:password\n..."}
+DELETE  /api/mailboxes/{mailboxId}                       [session]  [BUNDLE]   remove mailbox
+GET     /api/adspower/proxies                            [session]  [BUNDLE]   AdsPower proxy catalog
+GET     /api/studio/blocked-messages                     [session]  [BUNDLE]   messages the chat sites filtered (with offending words)
+POST    /api/studio/blocked-messages/clear               [session]  [BUNDLE]   clear that log
+
+# --- Snapchat fleet (session, internal) --------------------------------------------
+GET     /api/snap/rdps                                   [session]  [BUNDLE]   registered RDPs + placements (registry read)
+GET     /api/snap/status                                 [session]  [BUNDLE]   forces a refresh: {fleet, reports[]}
+GET     /api/snap/fleet-health                           [session]  [BUNDLE]   pure-HTTP fleet health
+POST    /api/snap/create                                 [session]  [BUNDLE]   {firstName,count} bulk account creation
+GET     /api/snap/create/status                          [session]  [BUNDLE]   creation job status
+POST    /api/snap/place                                  [session]  [BUNDLE]   {provision:bool} place accounts on RDPs
+POST    /api/snap/unplace                                [session]  [BUNDLE]   {usernames:[...]} detach

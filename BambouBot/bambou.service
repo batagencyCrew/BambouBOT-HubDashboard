@@ -1,0 +1,41 @@
+[Unit]
+Description=BambouBot (BambouAI Discord + Telegram bots)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/root/Projects/BambouBOT/BOTS/BambouBot
+ExecStart=/root/.nvm/versions/node/v24.18.0/bin/node /root/Projects/BambouBOT/BOTS/BambouBot/index.js
+Environment=NODE_ENV=production
+Environment=BAMBOU_ENV_FILE=/root/Projects/BambouBOT/BOTS/BambouBot/.env
+Environment=ACCESS_FILE=/var/lib/bambou/access.json
+StateDirectory=bambou
+StateDirectoryMode=0700
+UMask=0077
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bambou
+
+# The existing project is under /root; keep it readable, but not writable.
+# StateDirectory is automatically exempted from ProtectSystem's read-only mount.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
