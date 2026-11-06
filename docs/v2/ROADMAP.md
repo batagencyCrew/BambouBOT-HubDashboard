@@ -11,7 +11,7 @@ cut-over is verified (see `CUTOVER.md`).
 | 2. Agent + SDK | `bambou-agent`, Python SDK, Node SDK, cost accumulator | ✅ done (real-process e2e test) |
 | 3. Hub data & control | ingest, file sync, commands, proxy health, balances, WebSocket push | ✅ done |
 | 4. Dashboard | React rebuild with routing, all screens | ✅ done (browser smoke test) |
-| 5. Alerts & bots | rule engine ✅; BambouBot hub module | rule engine done; bot module in progress |
+| 5. Alerts & bots | rule engine, BambouBot `/hub` module, alert delivery | ✅ done (103 bot tests; live check against hub) |
 | 6. Backups | per-site Drive folders, retention, retries | ✅ done (real rclone test) |
 | 7. Onboarding | integration guide ✅; converting the existing chat-site scripts | guide done; script conversion declined (see below) |
 | Cut-over | deploy v2 next to v1, switch traffic, keep v1 for rollback | runbook written; operator step |
