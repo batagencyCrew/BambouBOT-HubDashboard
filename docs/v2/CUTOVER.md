@@ -12,7 +12,7 @@ different port (8000) and a separate database; nothing in v1 changes until step 
 ## 1. Set up v2 (on the hub host)
 
 ```bash
-sudo Deploy/setup-postgres.sh hubv2 hubv2          # prints HUB_DATABASE_URL
+sudo deploy/setup-postgres.sh hubv2 hubv2          # prints HUB_DATABASE_URL
 sudo mkdir -p /opt/bambou-hub && sudo rsync -a --exclude .venv --exclude node_modules \
      HubDashboard-v2/ /opt/bambou-hub/
 cd /opt/bambou-hub && sudo python3 -m venv .venv && sudo .venv/bin/pip install -r hub/requirements.txt

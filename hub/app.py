@@ -64,6 +64,9 @@ def create_app(*, settings: Settings | None = None, db: Database | None = None) 
     app.add_api_websocket_route("/ws/site", app.state.realtime.site_socket)
     app.add_api_websocket_route("/ws/bot", app.state.realtime.bot_socket)
 
+    app.add_middleware(BodyLimit, limit=settings.max_request_bytes,
+                       exempt=("/api/agent/v2/backups/upload", "/api/agent/backups/upload"))
+
     @app.middleware("http")
     async def headers(request: Request, call_next):
         response = await call_next(request)
@@ -87,6 +90,41 @@ def create_app(*, settings: Settings | None = None, db: Database | None = None) 
 
     _mount_frontend(app, settings)
     return app
+
+
+class BodyLimit:
+    """Reject request bodies over ``limit`` bytes (declared or streamed)."""
+
+    def __init__(self, app, limit: int, exempt: tuple[str, ...] = ()):
+        self.app = app
+        self.limit = limit
+        self.exempt = exempt
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") in self.exempt:
+            return await self.app(scope, receive, send)
+        for name, value in scope.get("headers", []):
+            if name == b"content-length" and value.isdigit() and int(value) > self.limit:
+                return await JSONResponse({"detail": "Request body too large"}, status_code=413)(scope, receive, send)
+        total = 0
+
+        async def limited():
+            nonlocal total
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body", b""))
+                if total > self.limit:
+                    raise _TooLarge()
+            return message
+
+        try:
+            await self.app(scope, limited, send)
+        except _TooLarge:
+            await JSONResponse({"detail": "Request body too large"}, status_code=413)(scope, receive, send)
+
+
+class _TooLarge(Exception):
+    pass
 
 
 def _env(name: str, default: str) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -14,6 +15,7 @@ from .permissions import Principal, effective_permissions, resolve_scope
 from .security import hash_password, needs_rehash, verify_password
 
 SESSION_COOKIE = "bambou_session"
+_touch_cache: dict[str, float] = {}
 
 
 def sha256(value: str) -> str:
@@ -152,10 +154,14 @@ class Auth:
         if not token or len(token) > 200:
             raise HTTPException(401, "Agent token required")
         row = self.db.one(
-            "SELECT * FROM site_tokens WHERE token_hash=%s AND revoked_at IS NULL", (sha256(token),))
+            "SELECT id, site_id FROM site_tokens WHERE token_hash=%s AND revoked_at IS NULL", (sha256(token),))
         if not row:
             raise HTTPException(401, "Invalid agent token")
-        self.db.execute("UPDATE site_tokens SET last_used_at=now() WHERE id=%s", (row["id"],))
+        # Throttled touch: agents call this on every request.
+        moment = time.monotonic()
+        if moment - _touch_cache.get(row["id"], 0) > 60:
+            _touch_cache[row["id"]] = moment
+            self.db.execute("UPDATE site_tokens SET last_used_at=now() WHERE id=%s", (row["id"],))
         return str(row["site_id"])
 
     def issue_site_token(self, site_id: str, label: str, user_id: str | None) -> str:
