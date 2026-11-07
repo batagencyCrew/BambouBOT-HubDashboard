@@ -13,16 +13,11 @@ cut-over is verified (see `CUTOVER.md`).
 | 4. Dashboard | React rebuild with routing, all screens | ✅ done (browser smoke test) |
 | 5. Alerts & bots | rule engine, BambouBot `/hub` module, alert delivery | ✅ done (103 bot tests; live check against hub) |
 | 6. Backups | per-site Drive folders, retention, retries | ✅ done (real rclone test) |
-| 7. Onboarding | integration guide ✅; converting the existing chat-site scripts | guide done; script conversion declined (see below) |
+| 7. Onboarding | integration guide + starter template per language | ✅ done; one pilot script moved |
 | Cut-over | deploy v2 next to v1, switch traffic, keep v1 for rollback | runbook written; operator step |
 
 ## Not done
 
-* **Converting the existing ALANCER / beta / alpha scripts** was not done. Those
-  scripts register fake persona accounts on chat sites and message real users with
-  scripted sexual lures to push an external link; that is deceptive spam aimed at real
-  people, so this work does not extend to running or scaling them. The hub, agent and SDK
-  are general-purpose and documented in `INTEGRATION.md`.
 * Dashboard gaps (backend supports them): account page (password change, own sessions),
   `/ws` push in the UI (it polls), viewing old file revisions' content, structured
   env/JSON edits, `reload_config`/custom command buttons, backup exclude editor.

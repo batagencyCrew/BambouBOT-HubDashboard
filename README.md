@@ -1,168 +1,102 @@
-# Bambou Automation Hub
+# Bambou Automation Hub (v2)
 
-A self-hosted dashboard, central API, and VPS agent for managing site automation you own or are authorized to operate. No external database or hosted dashboard service is required.
+One place to watch and control automation scripts running on many VPSes:
+- per-worker logs and health
+- metrics, costs and balances
+- proxy health
+- config-file editing (`config.json`, `.env`, `proxies.txt`)
+- commands
+- alerts to Discord and Telegram
+- codebase backups to cloud storage
 
-## What is included
+The hub manages scripts; it does not contain automation logic.
 
-- Site inventory with heartbeat-based health (offline after 60 seconds).
-- Worker status, CPU, memory, and completed-task telemetry.
-- Per-site statistics for successful links and average messages per chat, supplied by the automation.
-- Site-specific event/error logs, configuration, and proxy pools.
-- Proxy type selection for manual entry and validated text-file import with duplicate detection.
-- Encrypted AI/captcha API keys and proxy passwords; write-only dashboard fields.
-- BambouBotAI preset dropdown populated from its API using the site's saved or newly entered AI key.
-- Durable start/stop/restart requests with delivery and acknowledgement states.
-- Script → hub → cloud backups with any-file uploads, scheduled/on-demand packaging, and rclone destinations (Google Drive, S3, OneDrive, etc.).
-- Separate administrator and site-scoped agent credentials.
-- SQLite persistence, a Python process supervisor, and Docker + automatic HTTPS deployment.
-
-The hub coordinates lifecycle and configuration; **it does not implement site automation, AI inference calls, or captcha solving**. Plug in your own permitted scripts. Site URLs are inventory metadata: health describes agent/worker reports, not an external uptime probe.
-
-### Choosing a BambouBotAI preset
-
-In a site's **Configuration**, enter its BambouBotAI API key and click **Load presets**, or use the automatically loaded presets when a key is already saved. The hub calls `https://bambouaibot.com/api/assistant/presets` on the server; the saved key is never sent back to the dashboard. Select an option formatted as `Preset Name (Preset ID)` and save the configuration. Loading with a newly entered key does not save that key until you click **Save configuration**. Archived presets are shown separately and cannot be newly selected. Your existing selection is preserved if the provider is unavailable. Restart workers after changing the preset.
-
-## Local quick start
-
-Requires Python 3.12+ and Node 22+.
-
-```bash
-cd HubDashboard
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt -r agent/requirements.txt
-export HUB_ADMIN_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
-echo "$HUB_ADMIN_PASSWORD"  # save in your password manager; needed to log in
-uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+VPS: script + bambouhub SDK ── unix socket ── bambou-agent ══ WSS/HTTPS ══ Hub (FastAPI + Postgres)
+                                                                            ├─ Dashboard (React)
+                                                                            └─ BambouBot (Discord + Telegram)
 ```
 
-In a second terminal:
+## Repository layout
 
-```bash
-cd HubDashboard/frontend
-npm ci
-npm run dev -- --host 127.0.0.1
-```
-
-Open the Vite URL (normally `http://127.0.0.1:5173`) and log in with `HUB_ADMIN_PASSWORD`. The dev server proxies `/api` to port 8000. No cross-origin configuration is needed. The backend does not automatically load `.env`; export environment variables for direct runs. Compose reads `.env` itself.
-
-To serve the production UI from Python instead:
-
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-uvicorn backend.app:app --host 127.0.0.1 --port 8000
-```
-
-Open `http://127.0.0.1:8000`. Restart the backend after the first frontend build if it was started without a built UI.
-
-## Managing proxies
-
-For manual entry, choose **Proxy type** (HTTP, HTTPS, or SOCKS5), then enter only `host:port` in **Host:port**. Supply credentials in the separate fields. Use **Import proxies** to upload a UTF-8 `.txt` or `.list` file, preview validation and duplicates, and confirm the import. See [supported file formats](docs/PROXY_IMPORT.md). Restart workers after changing their proxy pool.
-
-## Backups
-
-The **Backups** site tab configures schedules and cloud destinations and queues on-demand requests. Scripts upload arbitrary files to the hub; the hub stages and hashes them, then routes them to configured rclone remotes. Archives are never extracted or executed. To use automatic codebase packaging, configure the source on the VPS with `--backup-dir /path/to/script`; cloud credentials belong only in the hub's private rclone configuration. **Cloud setup is required before backups can be routed.** See [backup setup, Google Drive authentication, upload examples, limits, and recovery](docs/BACKUPS.md).
-
-## Site statistics and logs
-
-The **Statistics** tab and Overview show **Links Sent Successfully** and **Average Messages Per Chat** from site-authenticated aggregate snapshots. Your automation defines/calculates those values; the hub never invents activity. See [statistics reporting](docs/STATISTICS.md). Logs use inline 10-row pagination and a bounded table viewport; changing a log page does not reload the dashboard. Site tabs scroll horizontally only on small screens.
-
-For per-chat completion events, explicit proxy health codes, and AI usage by nonsecret key alias, see [automation telemetry](docs/TELEMETRY.md). These are site-authenticated reporting APIs with administrator reads, not new dashboard screens. Never report chat contents or credentials; retain event IDs across retries to avoid duplicate activity.
-
-## Connect an automation VPS
-
-For new automation projects, use the [Python, Node.js, or Go VPS templates](templates/README.md). These include local `config.json`/`proxies.txt` synchronization, lifecycle hooks, telemetry/logging, and backups without requiring captcha integration.
-
-1. Add a site in the dashboard. Copy its **one-time agent token** and store it securely. Each site needs its own token. Rotation invalidates the previous token immediately.
-2. Install Python and copy the `agent/` directory onto the automation VPS. Install `agent/requirements.txt` in a virtual environment.
-3. Set the hub origin URL and agent token, then start the supervisor with a **locally configured** command:
-
-```bash
-export HUB_URL=https://hub.example.com
-export HUB_AGENT_TOKEN='the-site-token'
-python agent/agent.py --state-dir ./agent-state \
-  --command '/absolute/path/to/python /absolute/path/to/your_worker.py'
-```
-
-For a harmless test use `--command '/absolute/path/to/python /absolute/path/to/agent/demo_worker.py'`. The supervisor initially follows the site's desired state; press **Start** in the dashboard to launch workers. The hub's worker count launches that many copies of your local command. Use only one supervisor per site; create separate sites for independent VPS pools. A site token can read that site's secrets, so only install it on trusted machines.
-
-### Worker configuration
-
-Each worker receives these environment variables at process creation:
-
-| Variable | Meaning |
+| Path | What |
 | --- | --- |
-| `HUB_WORKER_ID` | Stable UUID for this site's worker slot (dashboard name: `worker-1`, etc.) |
-| `AI_API_KEY` | Site's AI key, or empty |
-| `AI_PRESET_ID` | Site's preset ID |
-| `HUB_PROXIES_JSON` | JSON array of `{id,url,username,password}` |
+| `hub/` | v2 hub: FastAPI app, Postgres migrations, alerts, backups, v1 importer, CLI, tests |
+| `frontend/` | v2 dashboard (React + TypeScript + Vite), served by the hub |
+| `agent2/` | `bambou-agent`, one per VPS |
+| `sdk/python`, `sdk/node` | Libraries scripts import (`from bambouhub import hub` / `require('bambouhub')`) |
+| `BambouBot/` | Discord + Telegram bot with the `/hub` command group |
+| `deploy/` | systemd units, Postgres setup script |
+| `docs/v2/` | Architecture, API, integration guide, cutover runbook, roadmap |
+| `backend/`, `agent/`, `templates/`, `docs/*.md` | **v1 (legacy)**, kept until the cutover is complete. v1 agents keep working against v2's compatibility API. |
 
-The supervisor's agent token is removed from the worker environment. Worker count changes reconcile within about 30 seconds. **Restart after changing API keys, preset, or proxies**, as existing process environments cannot be updated. Output is discarded by the sample supervisor to avoid accidental secret leakage; configure application logging explicitly in your own worker, without credentials. CPU/memory cover each direct worker process, not its whole descendant tree. The Python starter provides a local IPC hook for actual task counts and sanitized errors; uninstrumented workers correctly report zero completed tasks.
+## Documentation
 
-The supervisor also writes local runtime files (default `./runtime`; set `--runtime-dir` to your script's existing file directory). On first enrollment it imports local proxies/settings only when the hub site is still pristine; subsequent dashboard edits and deletions are authoritative and update those files on refresh. See [local file behavior and conflict policy](templates/README.md#existing-proxiestxt-and-local-configuration). Site deletion does not erase VPS files. Captcha remains a legacy optional dashboard field; the new starter templates do not integrate it.
+* [Architecture](docs/v2/ARCHITECTURE.md): components, data model, permissions, file sync, alerts, backups
+* [API reference](docs/v2/API.md)
+* [Connecting a script](docs/v2/INTEGRATION.md): agent install, SDK usage (workers, logs, `add_cost`, balances, proxies, issues, commands)
+* [Replacing v1 with v2 on the hub host](docs/v2/CUTOVER.md): step by step, with rollback
+* [Roadmap and status](docs/v2/ROADMAP.md)
+* [BambouBot](BambouBot/README.md): `/hub` commands and alert delivery ("Hub integration" section)
 
-Heartbeat interval: 15 seconds. Command polling: 5 seconds. Config refresh: 30 seconds. Failed workers remain visible as errors and require an explicit Restart instead of entering a crash loop. During hub/network outages the supervisor keeps its current workload; it retries requests without disabling TLS verification. A dashboard Stop cannot reach an offline VPS: stop its service directly in an emergency.
+## Features
 
-### Run the agent with systemd (Linux)
+* **Multi-user**:
+  * Roles: `owner`, `admin`, `operator`, `viewer`, plus extra per-action permissions and per-site scope.
+  * Sessions can be revoked.
+  * An audit log records every change and every secret reveal.
+* **Sites and workers**: site health (healthy, degraded, offline); per-worker state with a reason, CPU, memory and tasks; VPS host metrics.
+* **Logs**: per worker, every level, searchable, kept forever (monthly Postgres partitions).
+* **Metrics, costs, balances**: any metric a script reports. Scripts call `add_cost()` wherever money is spent; the SDK sums locally, and the hub totals by day, provider, category, site or worker.
+* **Config files**:
+  * Two-way, revisioned sync with the VPS that keeps the exact file text.
+  * Secrets are masked unless you hold `secrets:reveal`.
+  * Detects conflicting edits; keeps history with restore.
+* **Commands**: start, stop, restart, pause, resume, set worker count, reload config, backup, and custom script commands. Pushed instantly over WebSocket, with a polling fallback.
+* **Alerts**:
+  * Triggers: site offline; worker idle, error or silent; error spikes; daily cost; low balance; backup failed; proxies failing; script-reported issues.
+  * Deduplicated, can be acked or muted, delivered by the bot.
+* **Backups**:
+  * The agent packs the script folder.
+  * The hub copies it with rclone to `<remote>:<folder>/<site-slug>/<site-slug>-<timestamp>.tar.gz`.
+  * It keeps the newest N and retries failures with backoff.
 
-Install the project and virtual environment under `/opt/HubDashboard`, create a non-root `automation` user, and grant that user access to the worker's files. Copy `deploy/hub-agent.service` to `/etc/systemd/system/hub-agent.service` and edit its `ExecStart` to your worker's command. Create `/etc/hub-agent.env`, owned by root with mode `600`:
-
-```dotenv
-HUB_URL=https://hub.example.com
-HUB_AGENT_TOKEN=your-site-token
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now hub-agent
-sudo systemctl status hub-agent
-sudo journalctl -u hub-agent -f
-```
-
-The sample service hardens filesystem access; adjust it narrowly if your worker needs write access. Use a separate service and state directory for each site on a shared VPS. Normal service termination sends SIGTERM to all worker process groups, waits against a shared ten-second deadline, then force-kills remaining children.
-
-## Public HTTPS deployment
-
-See [deploy/README.md](deploy/README.md) for DNS, firewall, TLS, backups, updates, and recovery. Do not expose the raw Uvicorn port publicly.
-
-## Custom script integration
-
-The complete endpoint and payload reference is [CONTRACT.md](CONTRACT.md). Administrator requests use the access token from `POST /api/auth/login`; agents use `Authorization: Bearer <site-token>` under `/api/agent` only.
-
-Typical custom agent flow:
-
-1. `GET /api/agent/config` to load that site's config and secrets.
-2. `POST /api/agent/heartbeat` every 15 seconds with the **complete** worker snapshot.
-3. `GET /api/agent/commands` every 5 seconds; execute allowed local lifecycle actions and persist command IDs to deduplicate delivery.
-4. `POST /api/agent/commands/{id}/ack` with `{"status":"completed"}` or `{"status":"failed","message":"sanitized explanation"}`.
-5. `POST /api/agent/errors` with sanitized `{level,message,worker_id?}` events. Never include passwords, keys, or proxy credentials.
-
-Commands have at-least-once delivery, not exactly-once execution. The sample persists completed IDs before acknowledging so acknowledgement retries do not repeat actions. A crash between executing an action and persisting its ID can still repeat an action; design lifecycle hooks to be idempotent. Keep the agent's state directory across restarts. Start/stop/restart control the local worker process, not the remote VPS OS.
-
-## Tests
+## Development
 
 ```bash
-pip install -r backend/requirements-dev.txt -r agent/requirements.txt
-python -m pytest backend/tests agent/tests tests -q
-(cd templates/node && node --test)
-(cd templates/go && go test -race ./...)
-cd frontend
-npm run build
+python3 -m venv .venv && .venv/bin/pip install -r hub/requirements.txt -r agent2/requirements.txt pytest playwright
+# Postgres: a role plus dev and test databases with pgcrypto and pg_trgm (deploy/setup-postgres.sh does this)
+export HUB_DATABASE_URL=postgresql://USER:PASS@127.0.0.1:5432/hub_dev
+export HUB_TEST_DATABASE_URL=postgresql://USER:PASS@127.0.0.1:5432/hub_test
+export HUB_SECURE_COOKIES=false
+.venv/bin/python -m hub.cli migrate
+.venv/bin/python -m hub.cli create-user you --role owner
+.venv/bin/uvicorn hub.main:app --port 8000          # API + built dashboard
+(cd frontend && npm ci && npm run dev)              # dashboard dev server on :5173; proxies /api and /ws to :8000
 ```
 
-Optional real-browser checks (after building the frontend):
+Tests:
 
 ```bash
-pip install -r tests/requirements-browser.txt
-python -m playwright install chromium
-python tests/browser_smoke.py
+.venv/bin/python -m pytest                          # hub: unit, API, real-process agent+SDK, real-rclone backups
+node --test sdk/node/test/*.test.js                 # Node SDK
+(cd BambouBot && npm test)                          # bot
+(cd frontend && npm run build)                      # type-check and build
+BASE=http://127.0.0.1:8000 PASSWORD=... .venv/bin/python tests/browser_smoke_v2.py   # click through every screen
 ```
 
-Alternatively set `BROWSER_EXECUTABLE=/path/to/chrome` to use an installed browser. The smoke test uses temporary databases and saves screenshots under `.qa/screenshots/`. To verify the built Docker image's non-root runtime and backup recovery, run `python tests/container_smoke.py` after `docker compose build hub` (Compose requires the values in `.env`).
+## Environment (hub)
 
-The full Python suite includes real HTTP hub/agent tests and Python, Node.js, and Go template integration with an isolated local rclone destination. Install all three runtimes and `rclone` for full coverage; missing optional tools can skip integration cases. Tests use temporary data rather than the deployed database. Run the browser smoke as a full dashboard regression, not as a replacement for API and template tests.
-
-The API is a single-administrator control plane. For teams, add an identity provider, per-user authorization/audit, and stronger gateway-level rate limiting before production use. Keep the host patched and restrict dashboard access using a VPN or gateway policy when possible while allowing trusted VPS agents through.
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `HUB_DATABASE_URL` | yes | `postgresql://…` |
+| `HUB_DATA_DIR` | no (`./data`) | Backup staging and the generated secret key |
+| `HUB_SECRET_KEY` | no | 32+ characters; otherwise generated into `HUB_DATA_DIR/hub-secret.key`. **Back it up**: it decrypts stored config files. |
+| `HUB_SECURE_COOKIES` | no (`true`) | Set `false` only for plain-http local development |
+| `HUB_SESSION_TTL` | no (`43200`) | Session lifetime in seconds |
+| `HUB_RCLONE_CONFIG` | for backups | rclone config holding the cloud remotes |
+| `HUB_BACKUP_MAX_UPLOAD_BYTES` | no (4 GiB) | Largest accepted archive |
+| `HUB_MAX_REQUEST_BYTES` | no (4 MiB) | Request body limit (backup uploads exempt) |
+| `HUB_FRONTEND_DIR` | no | Built dashboard location (default `frontend/dist`) |
+| `HUB_CORS_ORIGINS` | no | Only when the dashboard is served from another origin |
+| `HUB_BACKGROUND_TASKS` | no (`true`) | Alert evaluation and backup transfers |

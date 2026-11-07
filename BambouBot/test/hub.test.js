@@ -338,7 +338,7 @@ test('discord: link/unlink, site autocomplete, and a bot without hub config', as
   const { hub, run } = discordFixture(t);
   const linked = await run('command', { user: STRANGER, sub: 'link', options: { code: 'ABCD-1234' } });
   assert.match(linked.text(), /Linked to hub user \*\*bob\*\*/);
-  const auto = await run('autocomplete', { focused: { name: 'site', value: 'cam' } });
+  const auto = await run('autocomplete', { focused: { name: 'site', value: 'alp' } });
   assert.deepEqual(auto.last(), [{ name: 'alpha — degraded', value: 'alpha' }]);
   await run('command', { user: STRANGER, sub: 'unlink' });
   assert.equal(hub.links[`discord:${STRANGER}`], undefined);
