@@ -1,0 +1,5 @@
+.env
+.bambou-agent/
+vendor/
+node_modules/
+__pycache__/

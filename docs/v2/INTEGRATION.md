@@ -13,46 +13,76 @@ hub  ◄── WSS/HTTPS ──  bambou-agent  ◄── unix socket ──  you
 * The **SDK** gives the script workers, logs, metrics, costs, balances, proxy health,
   issues and commands. It never sees the hub token.
 
+New script? Start from a template: [`templates/v2/python`](../../templates/v2/python) or
+[`templates/v2/node`](../../templates/v2/node). They are complete scripts with `TODO`
+blocks for your own code ([templates/v2/README.md](../../templates/v2/README.md)).
+
 ## 1. Create the site and get a token
 
-Dashboard → **Sites → Add site**. Copy the agent token (shown once). Rotate it later from
-the site's *Settings* tab.
+Dashboard → **Overview → Add site**. Copy the agent token (shown once). You can rotate
+it later from the site's **Settings** tab.
 
 ## 2. Install the agent on the VPS
 
+The agent needs Python 3.10+ on the VPS. As root:
+
 ```bash
-sudo mkdir -p /opt/bambou-agent && cd /opt/bambou-agent
-# copy agent2/ and sdk/ from this repo, then:
-python3 -m venv .venv && .venv/bin/pip install -r agent2/requirements.txt
+git clone https://github.com/batagencyCrew/BambouBOT-HubDashboard.git /tmp/hub-src   # private repo: use a token/deploy key, or rsync the folders over
+mkdir -p /opt/bambou-agent
+cp -r /tmp/hub-src/agent2 /tmp/hub-src/sdk /tmp/hub-src/deploy /opt/bambou-agent/ && rm -rf /tmp/hub-src
+python3 -m venv /opt/bambou-agent/.venv
+/opt/bambou-agent/.venv/bin/pip install -r /opt/bambou-agent/agent2/requirements.txt
+useradd --system --create-home automation 2>/dev/null || true    # user the script runs as
 ```
 
-Create `/etc/bambou-agent/<site>.env` (mode 600):
+Create `/etc/bambou-agent/<site>.conf` (owner root, mode 600). One file per site; the
+name after `@` in the service is this file's name:
 
 ```dotenv
-HUB_URL=https://hub.example.com
+HUB_URL=https://bamboubot.duckdns.org
 HUB_AGENT_TOKEN=hst_...
+HUB_SCRIPT_DIR=/opt/scripts/mysite
+HUB_SCRIPT_COMMAND=/opt/scripts/mysite/.venv/bin/python main.py
+HUB_FILES=config.json,.env,proxies.txt
+HUB_STATE_DIR=/var/lib/bambou-agent-mysite
 ```
 
-Run it (see `deploy/bambou-agent@.service` for systemd):
+Install and start it as a service:
 
 ```bash
-PYTHONPATH=/opt/bambou-agent/agent2 .venv/bin/python -m bambou_agent \
-  --script-dir /opt/scripts/demo \
-  --command "/opt/scripts/demo/.venv/bin/python demo_bot.py" \
+cp /opt/bambou-agent/deploy/bambou-agent@.service /etc/systemd/system/
+chown -R automation:automation /opt/scripts/mysite
+systemctl daemon-reload && systemctl enable --now bambou-agent@mysite
+journalctl -u bambou-agent@mysite -f
+```
+
+The unit runs as user `automation`, and `/opt/scripts` must be writable for config-file
+sync. Edit the unit if your script lives elsewhere.
+
+Settings can also be given as command-line options (for a quick manual run):
+
+```bash
+HUB_URL=https://bamboubot.duckdns.org HUB_AGENT_TOKEN=hst_... \
+PYTHONPATH=/opt/bambou-agent/agent2 /opt/bambou-agent/.venv/bin/python -m bambou_agent \
+  --script-dir /opt/scripts/mysite --command "python3 main.py" \
   --file config.json --file .env --file proxies.txt
 ```
 
-| Option | Meaning |
+| Option (env) | Meaning |
 | --- | --- |
-| `--script-dir` | Script root. Managed files and backups are relative to it. |
-| `--command` | How to start the script. Omit it if something else starts the script; the agent then only relays telemetry, files and backups. |
-| `--file PATH[:FORMAT]` | File to manage (repeatable). Format is guessed: `.env` → env, `*.json` → json, `*prox*.txt` → proxies, `*prox*.json` → proxy-json; else text. |
+| `--script-dir` (`HUB_SCRIPT_DIR`) | Script root. Managed files and backups are relative to it. |
+| `--command` (`HUB_SCRIPT_COMMAND`) | How to start the script. Omit it if something else starts the script; the agent then only relays telemetry, files and backups. |
+| `--file PATH[:FORMAT]` (`HUB_FILES`, comma-separated) | File to manage. Format is guessed: `.env` → env, `*.json` → json, `*prox*.txt` → proxies, `*prox*.json` → proxy-json; anything else → text. |
+| `--state-dir` (`HUB_STATE_DIR`) | Agent state: offline spool, file-sync state, script output log. Default `<script-dir>/.bambou-agent`. |
 | `--no-crash-restart` | Do not restart the script automatically after it crashes. |
 | `--no-backup` | Disable backups on this VPS. |
 | `--backup-exclude GLOB` | Extra excludes (hub defaults: `.git node_modules __pycache__ .venv venv`). |
 | `--env KEY=VALUE` | Extra environment variables for the script. |
+| `--stop-timeout` (`HUB_STOP_TIMEOUT`) | Seconds between SIGTERM and SIGKILL on stop (default 20). |
 
-The script is started with `HUB_AGENT_SOCKET` set; the SDK uses it automatically.
+The script is started with `HUB_AGENT_SOCKET` set, and the SDK uses it automatically.
+The script's stdout/stderr go to `<state-dir>/script-output.log`. After a crash, the
+last lines are sent to the hub as an error log.
 
 ## 3. Add the SDK to the script
 

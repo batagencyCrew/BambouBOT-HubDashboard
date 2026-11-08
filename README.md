@@ -27,16 +27,18 @@ VPS: script + bambouhub SDK ── unix socket ── bambou-agent ══ WSS/HT
 | `sdk/python`, `sdk/node` | Libraries scripts import (`from bambouhub import hub` / `require('bambouhub')`) |
 | `BambouBot/` | Discord + Telegram bot with the `/hub` command group |
 | `deploy/` | systemd units, Postgres setup script |
-| `docs/v2/` | Architecture, API, integration guide, cutover runbook, roadmap |
-| `backend/`, `agent/`, `templates/`, `docs/*.md` | **v1 (legacy)**, kept until the cutover is complete. v1 agents keep working against v2's compatibility API. |
+| `templates/v2/` | Script starters (Python, Node) with placeholders for your code |
+| `docs/v2/` | Architecture, API, integration guide, deployment, roadmap |
+| `backend/`, `agent/`, `templates/{go,node,python}`, `docs/*.md` | **v1 (legacy)**, kept for rollback. VPSes still on the v1 agent work through v2's compatibility API. |
 
 ## Documentation
 
 * [Architecture](docs/v2/ARCHITECTURE.md): components, data model, permissions, file sync, alerts, backups
 * [API reference](docs/v2/API.md)
 * [Connecting a script](docs/v2/INTEGRATION.md): agent install, SDK usage (workers, logs, `add_cost`, balances, proxies, issues, commands)
-* [Replacing v1 with v2 on the hub host](docs/v2/CUTOVER.md): step by step, with rollback
+* [Deployment and operations](docs/v2/DEPLOYMENT.md): how this host runs v2, updating, backups, rollback
 * [Roadmap and status](docs/v2/ROADMAP.md)
+* [Script starters](templates/v2/README.md): runnable Python and Node templates with TODO placeholders
 * [BambouBot](BambouBot/README.md): `/hub` commands and alert delivery ("Hub integration" section)
 
 ## Features

@@ -10,7 +10,7 @@ User=bambou
 Group=bambou
 WorkingDirectory=/opt/bambou-hub
 EnvironmentFile=/etc/bambou-hub.env
-ExecStart=/opt/bambou-hub/.venv/bin/uvicorn hub.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+ExecStart=/opt/bambou-hub/.venv/bin/uvicorn hub.main:app --host 127.0.0.1 --port 8020 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
 # One process: the WebSocket registry, background tasks and in-process command
 # push assume a single worker. Vertically scale the hub before adding workers.
 Restart=on-failure
